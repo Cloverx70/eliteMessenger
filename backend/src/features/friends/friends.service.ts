@@ -9,6 +9,7 @@ import { User } from 'src/database/entities/user.entity';
 import { handleError } from 'src/utils/handleError.util';
 import { Repository } from 'typeorm';
 import { manageFriendRequestDto } from './dtos/manageFriendRequest.dto';
+import { ChatService } from '../chat/chat.service';
 
 @Injectable()
 export class FriendsService {
@@ -17,6 +18,7 @@ export class FriendsService {
     private readonly friendsRepo: Repository<Friends>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    private readonly chatService: ChatService,
   ) {}
 
   usersSelect = [
@@ -123,6 +125,11 @@ export class FriendsService {
         request.status = manageRequestDto.status;
         request.acceptedDate = new Date();
         await this.friendsRepo.save(request);
+
+        await this.chatService.CreateChatRoom({
+          uid1: request.user1Id,
+          uid2: request.user2Id,
+        }); // on accepting a friend request automatically create a chatroom between them.
       } else {
         await this.friendsRepo.remove(request);
       }

@@ -10,7 +10,6 @@ import {
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import MessageDto from './dtos/message.dto';
-import { ChatRoomDto } from './dtos/chatroom.dto';
 
 @WebSocketGateway(3001, {
   cors: {
@@ -32,22 +31,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleDisconnect(client: Socket) {
     console.log(`Client disconnected: ${client.id}`);
     // cleanup if necessary
-  }
-
-  @SubscribeMessage('create-chat-room')
-  async handleCreateChatRoom(
-    @MessageBody() data: ChatRoomDto,
-    @ConnectedSocket() client: Socket,
-  ) {
-    try {
-      const response = await this.chatService.CreateChatRoom(data);
-
-      this.server.to(client.id).emit('receiveMessage', response);
-    } catch (error) {
-      client.emit('errorMessage', {
-        message: error.message || 'Internal Server Error',
-      });
-    }
   }
 
   @SubscribeMessage('send-message')

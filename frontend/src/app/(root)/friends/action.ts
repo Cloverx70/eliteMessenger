@@ -141,8 +141,6 @@ export async function GetUserSearch(
         res.data.message || "Something went wrong while retreiving your friends"
       );
 
-    console.log(res.data.data);
-
     return res.data.data;
   } catch (error) {
     handleError(error);

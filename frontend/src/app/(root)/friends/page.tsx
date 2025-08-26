@@ -1,4 +1,4 @@
-import SearchInput from "@/app/components/root-components/SearchInput";
+import SearchInput from "@/app/(root)/friends/_components/SearchInput";
 import PeopleYouMayKnow from "./_components/peopleYouMayKnow";
 import SuggestedUsers from "@/app/components/root-components/SuggestedUsers";
 import UserNavigation from "./_components/userNavigation";
