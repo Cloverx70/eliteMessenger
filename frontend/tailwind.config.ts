@@ -10,11 +10,19 @@ export default {
   theme: {
     extend: {
       colors: {
+        elitePurple: "#8B5CF6",
+        elitePurpleHover: "#7C3AED",
+        elitePurplePressed: "#6D28D9",
+        bgPrimary: "#080B14",
+        bgNavbar: "#0F172A",
+        bgSurface: "#111827",
+        bgElevated: "#182235",
+
+        bgInput: "#202B3C",
         customBlack: "#212121",
         customDarkBlack: "#1c1c1c",
+        customGray: "#f6f6f8",
         customBeige: "#D9CAB3",
-        customOlive: "#6D9886",
-        customDarkOlive: "#557C6D",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

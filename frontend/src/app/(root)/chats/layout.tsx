@@ -1,23 +1,29 @@
-import { QueryProvider } from "@/app/providers/query-provider";
+import ChatroomProfile from "./_components/ChatroomProfile";
 import ChatroomsList from "./_components/ChatroomsList";
+import { QueryProvider } from "@/app/providers/query-provider";
+import { getUserFromCookie } from "@/lib/user-auth";
+import { redirect } from "next/navigation";
 
-export default function ChatsLayout({
+export default async function ChatsLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const user = await getUserFromCookie();
+  if (!user) redirect("/login");
   return (
-    <section className="w-full h-screen antialiased dark:bg-customBlack bg-gray-50 flex flex-col">
+    <section className="h-screen w-full dark:bg-customBlack">
       <QueryProvider>
-        <h1 className="font-bold text-3xl py-3 pb-4 pl-5 text-customBlack">
-          Chats
-        </h1>
-
-        <div className="w-full flex flex-1 overflow-hidden">
-          <div className="w-[30%] h-full overflow-y-auto border-r border-gray-200">
+        <div className="flex h-screen w-full overflow-hidden">
+          <aside className="h-full flex-[2.5]">
             <ChatroomsList />
-          </div>
-          <div className="w-[70%] h-full overflow-y-auto">{children}</div>
+          </aside>
+
+          <main className="h-full flex-[5.5]">{children}</main>
+
+          <aside className="h-full flex-[2]">
+            <ChatroomProfile />
+          </aside>
         </div>
       </QueryProvider>
     </section>

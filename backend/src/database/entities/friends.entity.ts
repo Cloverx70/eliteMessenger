@@ -3,10 +3,11 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
-  JoinColumn,
 } from 'typeorm';
+
 import { User } from './user.entity';
 
 export enum FriendStatus {

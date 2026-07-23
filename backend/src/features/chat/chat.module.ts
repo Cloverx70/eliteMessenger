@@ -1,16 +1,38 @@
-import { Module } from '@nestjs/common';
-import { ChatService } from './chat.service';
-import { ChatGateway } from './chat.gateway';
 import { ChatController } from './chat.controller';
+import { ChatGateway } from './chat.gateway';
+import { ChatRoom } from '../../database/entities/chatRoom.entity';
+import { ChatService } from './chat.service';
+import { GroupChat } from '../../database/entities/groupChat.entity';
+import { GroupChatController } from './group-chat.controller';
+import { GroupChatService } from './group-chat.service';
+import { GroupMember } from '../../database/entities/groupMember.entity';
+import { GroupMessage } from '../../database/entities/groupMessage.entity';
+import { GroupMessageAttachment } from '../../database/entities/groupMessageAttachment.entity';
+import { GroupMessageReceipt } from '../../database/entities/groupMessageReceipt.entity';
+import { Message } from '../../database/entities/message.entity';
+import { MessageAttachment } from '../../database/entities/messageAttachment.entity';
+import { Module } from '@nestjs/common';
+import { S3Module } from '../../utils/s3/s3.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ChatRoom } from 'src/database/entities/chatRoom.entity';
-import { Message } from 'src/database/entities/message.entity';
-import { User } from 'src/database/entities/user.entity';
+import { User } from '../../database/entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ChatRoom, Message, User])],
-  controllers: [ChatController],
-  providers: [ChatGateway, ChatService],
-  exports: [ChatService],
+  imports: [
+    TypeOrmModule.forFeature([
+      ChatRoom,
+      Message,
+      User,
+      MessageAttachment,
+      GroupChat,
+      GroupMember,
+      GroupMessage,
+      GroupMessageAttachment,
+      GroupMessageReceipt,
+    ]),
+    S3Module,
+  ],
+  controllers: [ChatController, GroupChatController],
+  providers: [ChatGateway, ChatService, GroupChatService],
+  exports: [ChatService, GroupChatService],
 })
 export class ChatModule {}

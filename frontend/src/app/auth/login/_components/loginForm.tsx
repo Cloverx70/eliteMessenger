@@ -1,6 +1,5 @@
 "use client";
-import Input from "@/app/components/input";
-import { z } from "zod";
+
 import {
   Form,
   FormControl,
@@ -9,13 +8,15 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
-import { login } from "../../actions";
+import Input from "@/app/components/input";
 import Spinner from "@/app/components/spinner";
+import { login } from "../../actions";
 import toaster from "@/app/components/toaster";
+import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 const LoginSchema = z.object({
   email: z
@@ -108,7 +109,7 @@ export const LoginForm = () => {
         <button
           type="submit"
           disabled={isPending}
-          className="w-full h-8 flex items-center justify-center bg-customOlive hover:bg-customDarkOlive delay-100 ease-linear transition-all text-white rounded"
+          className="w-full h-8 flex items-center justify-center bg-elitePurple hover:bg-elitePurplePressed delay-100 ease-linear transition-all text-white rounded"
         >
           {isPending ? <Spinner /> : "Login"}
         </button>

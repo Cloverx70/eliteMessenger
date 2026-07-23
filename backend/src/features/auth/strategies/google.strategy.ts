@@ -1,13 +1,10 @@
-import { PassportStrategy } from '@nestjs/passport';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { Strategy, VerifyCallback } from 'passport-google-oauth20';
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+
 import { AuthService } from '../auth.service';
+import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
+import { handleError } from '../../../utils/handleError.util';
 
 @Injectable()
 export class googleStrategy extends PassportStrategy(Strategy) {
@@ -39,10 +36,8 @@ export class googleStrategy extends PassportStrategy(Strategy) {
       req.token = token;
 
       done(null, { token });
-    } catch (error) {
-      if (error instanceof NotFoundException)
-        throw new NotFoundException(error.message);
-      throw new BadRequestException(error.message);
+    } catch (error: any) {
+      handleError(error);
     }
   }
 }

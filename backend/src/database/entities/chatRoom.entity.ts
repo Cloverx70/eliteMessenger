@@ -1,20 +1,21 @@
 import {
-  Entity,
-  PrimaryGeneratedColumn,
-  ManyToOne,
-  CreateDateColumn,
-  UpdateDateColumn,
   Column,
-  Unique,
-  OneToMany,
-  Index,
+  CreateDateColumn,
   DeleteDateColumn,
+  Entity,
+  Index,
   JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  Unique,
+  UpdateDateColumn,
 } from 'typeorm';
-import { User } from './user.entity'; // your User entity path
-import { Message } from './message.entity';
 
-@Entity()
+import { Message } from './message.entity';
+import { User } from './user.entity'; // your User entity path
+
+@Entity('chatroom')
 @Unique(['user1', 'user2']) // ensures no duplicate room between same two users
 @Index('idx_user2_user1', ['user2Id', 'user1Id'])
 @Index('idx_user1_user2', ['user1Id', 'user2Id'])

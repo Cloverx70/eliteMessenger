@@ -1,23 +1,31 @@
 "use client";
-import React, { useState } from "react";
-import { IoSearch } from "react-icons/io5";
 
-const SearchInput = () => {
-  const [value, setValue] = useState<string>("");
+import { CiSearch } from "react-icons/ci";
+import React from "react";
+import { SlidersHorizontal } from "lucide-react";
 
-  // const debouncedValue = useDebounce(value, 300);
+type SearchInputProps = {
+  value: string;
+  onChange: (value: string) => void;
+};
 
+const SearchInput = ({ value, onChange }: SearchInputProps) => {
   return (
-    <div className="relative w-full h-9 border rounded-xl p-1 flex items-center justify-center px-4">
-      <div className="w-full flex justify-start items-center">
+    <div className="relative flex h-9 w-full items-center justify-center gap-2">
+      <div className="flex h-full w-full items-center justify-start gap-1 rounded-2xl bg-customGray px-3">
+        <CiSearch size={20} className="text-slate-500" />
+
         <input
-          placeholder="Search here.."
+          placeholder="Search chats..."
           type="text"
-          className="flex-1 h-full text-sm bg-transparent border-none outline-none"
-          onChange={(e) => setValue(e.target.value)}
+          className="h-full flex-1 border-none bg-transparent pl-1 text-sm outline-none placeholder:text-slate-500"
+          onChange={(e) => onChange(e.target.value)}
           value={value}
         />
-        <IoSearch />
+      </div>
+
+      <div className="cursor-pointer rounded-2xl text-slate-500">
+        <SlidersHorizontal size={15} />
       </div>
     </div>
   );

@@ -131,11 +131,25 @@ export class FriendsController {
   // Get received friend requests
   @Get('people-you-may-know')
   @UseGuards(JwtGuard)
-  async getPeopleYouMayKnow(@Req() req: Request, @Res() res: Response) {
+  async getPeopleYouMayKnow(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Query('q') q?: string,
+  ) {
     const uid = req.user.id;
     if (!uid) throw new BadRequestException('invalid token');
 
-    const result = await this.friendsService.getPeopleYouMayKnow(uid);
+    const result = await this.friendsService.getPeopleYouMayKnow(uid, q);
+    return res.status(result.code).json(result);
+  }
+
+  @Get('suggested-users')
+  @UseGuards(JwtGuard)
+  async GetSuggestedUsers(@Req() req: Request, @Res() res: Response) {
+    const uid = req.user.id;
+    if (!uid) throw new BadRequestException('invalid token');
+
+    const result = await this.friendsService.GetSuggestedUsers(uid);
     return res.status(result.code).json(result);
   }
 

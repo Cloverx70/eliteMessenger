@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+
+import { AuthService } from '../auth.service';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-local';
-import { handleError } from 'src/utils/handleError.util';
-import { AuthService } from '../auth.service';
+import { handleError } from '../../../utils/handleError.util';
 
 @Injectable()
 export class localStrategy extends PassportStrategy(Strategy) {
@@ -20,7 +21,7 @@ export class localStrategy extends PassportStrategy(Strategy) {
       if (!token) throw new BadRequestException('invalid email or password');
 
       return token;
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }

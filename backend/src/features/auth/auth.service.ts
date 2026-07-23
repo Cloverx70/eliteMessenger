@@ -5,17 +5,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from 'src/database/entities/user.entity';
-import { handleError } from 'src/utils/handleError.util';
 import { LoginUserDto } from './dtos/loginUser.dto';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterUserDto } from './dtos/registerUser.dto';
 import { Profile } from 'passport-google-oauth20';
-import { EmailService } from 'src/utils/email/email.service';
-import { resetPasswordEmailTemplate } from 'src/utils/email/templates/reset-password.template';
 import { ResetPasswordDto } from './dtos/resetPassword.dto';
+import { User } from '../../database/entities/user.entity';
+import { EmailService } from '../../utils/email/email.service';
+import { resetPasswordEmailTemplate } from '../../utils/email/templates/reset-password.template';
+import { handleError } from '../../utils/handleError.util';
 @Injectable()
 export class AuthService {
   constructor(
@@ -98,7 +98,7 @@ export class AuthService {
       const payload = this.jwtService.sign({ id: userExists.id });
 
       return payload;
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -124,14 +124,13 @@ export class AuthService {
       const newUser = this.userRepo.create({
         ...registerDto,
         password: hashedPassword,
-        userPfpUrl:
-          'https://elitemessenger.s3.eu-north-1.amazonaws.com/userpfps/defaultprofilepicture',
+        bio: `@${registerDto.username}`,
       });
 
       await this.userRepo.save(newUser);
 
       return { message: 'user registered successfully', code: 201 };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -185,7 +184,7 @@ export class AuthService {
 
       token = this.jwtService.sign(payload);
       return token;
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -223,7 +222,7 @@ export class AuthService {
           'if the email you provided is associated with an account please check your inbox',
         code: 200,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -268,7 +267,7 @@ export class AuthService {
         message: 'user reset password successfully..',
         code: 200,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }

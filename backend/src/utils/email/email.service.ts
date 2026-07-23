@@ -1,5 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
+
+import { BadRequestException, Injectable } from '@nestjs/common';
+
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -33,7 +35,7 @@ export class EmailService {
         message: `Email sent successfully to ${to}`,
         info,
       };
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 'EAUTH') {
         throw new BadRequestException(
           'Authentication failed. Please check your email credentials.',

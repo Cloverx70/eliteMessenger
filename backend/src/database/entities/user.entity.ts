@@ -5,11 +5,16 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { ChatRoom } from './chatRoom.entity';
-import { Message } from './message.entity';
-import { Friends } from './friends.entity';
 
-@Entity()
+import { ChatRoom } from './chatRoom.entity';
+import { Friends } from './friends.entity';
+import { GroupChat } from './groupChat.entity';
+import { GroupMember } from './groupMember.entity';
+import { GroupMessage } from './groupMessage.entity';
+import { GroupMessageReceipt } from './groupMessageReceipt.entity';
+import { Message } from './message.entity';
+
+@Entity('user')
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -19,6 +24,9 @@ export class User {
 
   @Column({ type: 'varchar', unique: true })
   username: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  bio: string;
 
   @Column({ type: 'varchar' })
   firstname: string;
@@ -46,6 +54,9 @@ export class User {
 
   @Column({ type: 'boolean', default: true })
   isActive: boolean = true;
+
+  @Column({ nullable: true })
+  lastSeen: Date;
 
   @Column({ type: 'boolean', default: false })
   isAccountLocked: boolean = false;
@@ -76,4 +87,16 @@ export class User {
 
   @OneToMany(() => Message, (message) => message.sender)
   messages: Message[];
+
+  @OneToMany(() => GroupChat, (group) => group.creator)
+  createdGroups: GroupChat[];
+
+  @OneToMany(() => GroupMember, (membership) => membership.user)
+  groupMemberships: GroupMember[];
+
+  @OneToMany(() => GroupMessage, (message) => message.sender)
+  groupMessages: GroupMessage[];
+
+  @OneToMany(() => GroupMessageReceipt, (receipt) => receipt.user)
+  groupMessageReceipts: GroupMessageReceipt[];
 }

@@ -1,9 +1,13 @@
 export default function GroupsPage() {
   return (
-    <section className=" w-full min-h-screen flex flex-col items-start justify-start">
-      <h1 className=" font-bold text-3xl py-3 pl-5 text-customBlack">
-        Group Chats
-      </h1>
+    <section className="flex h-full w-full items-center justify-center">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <p className="font-semibold">Select a group to start chatting</p>
+
+        <p className="text-xs text-slate-500">
+          Or create a new group from the left panel.
+        </p>
+      </div>
     </section>
   );
 }

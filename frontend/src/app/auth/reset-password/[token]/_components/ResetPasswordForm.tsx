@@ -1,6 +1,5 @@
 "use client";
 
-import Input from "@/app/components/input";
 import {
   Form,
   FormControl,
@@ -8,15 +7,17 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { useParams, useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { useEffect, useState } from "react";
-import toaster from "@/app/components/toaster";
-import { verifyResetPassword } from "@/app/auth/actions";
+import { useParams, useRouter } from "next/navigation";
+
+import Input from "@/app/components/input";
 import Spinner from "@/app/components/spinner";
+import toaster from "@/app/components/toaster";
+import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
+import { verifyResetPassword } from "@/app/auth/actions";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 const VerifyResetPasswordSchema = z
   .object({
@@ -39,7 +40,7 @@ export const ResetPasswordForm = () => {
 
   const { token } = useParams();
 
-  const safeToken: string = Array.isArray(token) ? token[0] : token ?? "";
+  const safeToken: string = Array.isArray(token) ? token[0] : (token ?? "");
 
   useEffect(() => {
     if (safeToken.length < 100) router.replace("/");
@@ -80,12 +81,12 @@ export const ResetPasswordForm = () => {
       <form
         className="w-full h-full flex flex-col items-center justify-between"
         onSubmit={FormData.handleSubmit((data) =>
-          mutateVerifyPasswordReset(data)
+          mutateVerifyPasswordReset(data),
         )}
       >
         <div className="w-full">
           <h1 className="font-semibold text-customBlack text-xl 2xl:text-2xl xl:text-2xl lg:text-2xl md:text-2xl sm:text-2xl">
-            Reset your <span className=" text-customOlive">password</span>
+            Reset your <span className=" text-elitePurple">password</span>
           </h1>
           <h4 className="text-customBlack font text-sm 2xl:text-base xl:text-base lg:text-base md:text-base sm:text-base">
             Please fill the following form to reset your password.
@@ -164,7 +165,7 @@ export const ResetPasswordForm = () => {
         </div>
         <button
           type="submit"
-          className=" bg-customOlive hover:bg-customDarkOlive delay-100 transition-all ease-linear w-full mt-4 py-1.5 text-sm font-normal text-white"
+          className=" bg-elitePurple hover:bg-elitePurplePressed delay-100 transition-all ease-linear w-full mt-4 py-1.5 text-sm font-normal text-white"
           disabled={isPending}
         >
           {isPending ? <Spinner /> : "Confirm Reset"}

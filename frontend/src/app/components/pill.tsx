@@ -1,14 +1,20 @@
 import React from "react";
 
-interface pillProps {
+interface PillProps {
   text: string;
+  isDefault?: boolean;
 }
 
-const Pill: React.FC<pillProps> = ({ text }) => {
+const Pill: React.FC<PillProps> = ({ text, isDefault }) => {
   return (
-    <div className="w-auto h-auto text-sm px-6 py-1 active:bg-customOlive active:border-none active:text-white rounded-full border">
+    <div
+      className={`w-auto h-auto cursor-pointer text-sm px-4 py-1  rounded-full border ${
+        isDefault ? "bg-elitePurplePressed border-none text-white" : ""
+      }`}
+    >
       {text}
     </div>
   );
 };
+
 export default Pill;

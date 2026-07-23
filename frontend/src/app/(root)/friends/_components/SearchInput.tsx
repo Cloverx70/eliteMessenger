@@ -1,12 +1,14 @@
 "use client";
+
+import { AnimatePresence, motion } from "framer-motion";
+import React, { useState } from "react";
+
 import { GetUserSearch } from "@/app/(root)/friends/action";
+import Image from "next/image";
+import { IoSearch } from "react-icons/io5";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useDebounce } from "@/app/constants";
 import { useQuery } from "@tanstack/react-query";
-import React, { useState } from "react";
-import { IoSearch } from "react-icons/io5";
-import { AnimatePresence, motion } from "framer-motion";
-import Image from "next/image";
-import { Skeleton } from "@/components/ui/skeleton";
 
 const SearchInput = () => {
   const [value, setValue] = useState<string>("");
@@ -67,7 +69,7 @@ const SearchInput = () => {
                     }`}
                   >
                     <div className="w-full h-full flex gap-5 items-center justify-start">
-                      <div className="rounded-full ring-2 ring-customOlive items-center justify-start">
+                      <div className="rounded-full ring-2 ring-elitePurple items-center justify-start">
                         <Image
                           src={user.userPfpUrl}
                           alt="pfp"

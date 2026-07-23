@@ -1,11 +1,13 @@
 import RoomChat from "../_components/RoomChat";
+import { getUserFromCookie } from "@/lib/user-auth";
+import { redirect } from "next/navigation";
 
-export default function ChatPage() {
+export default async function ChatPage() {
+  const user = await getUserFromCookie();
+  if (!user) redirect("/login");
   return (
-    <section className=" w-full h-screen min-h-screen flex flex-col items-start justify-start">
-      <div className=" w-full h-full">
-        <RoomChat />
-      </div>
+    <section className="h-full w-full">
+      <RoomChat user={user} />
     </section>
   );
 }

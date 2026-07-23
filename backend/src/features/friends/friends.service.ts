@@ -4,12 +4,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Friends, FriendStatus } from 'src/database/entities/friends.entity';
-import { User } from 'src/database/entities/user.entity';
-import { handleError } from 'src/utils/handleError.util';
-import { Repository } from 'typeorm';
+
+import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
 import { manageFriendRequestDto } from './dtos/manageFriendRequest.dto';
 import { ChatService } from '../chat/chat.service';
+import { Friends, FriendStatus } from '../../database/entities/friends.entity';
+import { User } from '../../database/entities/user.entity';
+import { handleError } from '../../utils/handleError.util';
 
 @Injectable()
 export class FriendsService {
@@ -53,7 +54,7 @@ export class FriendsService {
         code: 200,
         message: 'search successfull',
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -93,7 +94,7 @@ export class FriendsService {
         message: 'Friend request sent successfully',
         code: 200,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -138,7 +139,7 @@ export class FriendsService {
         message: `request has been ${manageRequestDto.status} successfully`,
         code: 200,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -164,7 +165,7 @@ export class FriendsService {
         message: 'users unfriended successfully',
         code: 200,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -189,7 +190,7 @@ export class FriendsService {
         message: 'request canceled successfully',
         code: 200,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -217,51 +218,89 @@ export class FriendsService {
         code: 200,
         data: friends,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
 
-  async getPeopleYouMayKnow(uid: string) {
+  async getPeopleYouMayKnow(uid: string, searchQuery?: string) {
     try {
+      const search = searchQuery?.trim().toLowerCase();
+
+      const applySearch = <T>(queryBuilder: SelectQueryBuilder<T>) => {
+        if (!search) return queryBuilder;
+
+        return queryBuilder.andWhere(
+          new Brackets((qb) => {
+            qb.where('LOWER(u.username) LIKE :search')
+              .orWhere('LOWER(u.firstname) LIKE :search')
+              .orWhere('LOWER(u.lastname) LIKE :search')
+              .orWhere(
+                `LOWER(CONCAT_WS(' ', u.firstname, u.lastname)) LIKE :search`,
+              );
+          }),
+          {
+            search: `%${search}%`,
+          },
+        );
+      };
+
       const friendRows = await this.friendsRepo
         .createQueryBuilder('f')
         .select(
-          `CASE WHEN f.user1Id = :uid THEN f.user2Id ELSE f.user1Id END`,
+          `
+        CASE
+          WHEN f.user1Id = :uid
+          THEN f.user2Id
+          ELSE f.user1Id
+        END
+        `,
           'id',
         )
         .where(
-          '(f.user1Id = :uid OR f.user2Id = :uid) AND f.status = :status',
+          `
+        (
+          f.user1Id = :uid
+          OR f.user2Id = :uid
+        )
+        AND f.status != :status
+        `,
           {
             uid,
-            status: FriendStatus.ACCEPTED,
+            status: FriendStatus.DECLINED,
           },
         )
-        .getRawMany();
+        .getRawMany<{ id: string }>();
 
-      const friendIds = friendRows.map((f) => f.id);
+      const friendIds = [...new Set(friendRows.map((friend) => friend.id))];
 
+      /*
+       * No direct friends/relationships fallback.
+       */
       if (friendIds.length === 0) {
         const excludedIdsRaw = `
-  SELECT fr.user1Id AS id
-  FROM friends fr
-  WHERE fr.user2Id = :uid
-  
-  UNION
-  
-  SELECT fr.user2Id AS id
-  FROM friends fr
-  WHERE fr.user1Id = :uid
-`;
+        SELECT fr.user1Id AS id
+        FROM friends fr
+        WHERE fr.user2Id = :uid
 
-        const fallbackUsers = await this.userRepo
+        UNION
+
+        SELECT fr.user2Id AS id
+        FROM friends fr
+        WHERE fr.user1Id = :uid
+      `;
+
+        const queryBuilder = this.userRepo
           .createQueryBuilder('u')
           .select(this.usersSelect)
           .where(`u.id NOT IN (${excludedIdsRaw})`)
           .andWhere('u.id != :uid', { uid })
           .setParameters({ uid })
-          .limit(30)
-          .getMany();
+          .limit(30);
+
+        applySearch(queryBuilder);
+
+        const fallbackUsers = await queryBuilder.getMany();
 
         return {
           message: 'People you may know (no friends fallback)',
@@ -270,33 +309,60 @@ export class FriendsService {
         };
       }
 
+      /*
+       * Find accepted friends of the current user's friends.
+       */
       const mutualRows = await this.friendsRepo
         .createQueryBuilder('f')
         .select(
-          `CASE WHEN f.user1Id IN (:...friendIds) THEN f.user2Id ELSE f.user1Id END`,
+          `
+        CASE
+          WHEN f.user1Id IN (:...friendIds)
+          THEN f.user2Id
+          ELSE f.user1Id
+        END
+        `,
           'id',
         )
         .where(
-          `(f.user1Id IN (:...friendIds) OR f.user2Id IN (:...friendIds)) AND f.status = :status`,
+          `
+        (
+          f.user1Id IN (:...friendIds)
+          OR f.user2Id IN (:...friendIds)
+        )
+        AND f.status = :status
+        `,
           {
             friendIds,
             status: FriendStatus.ACCEPTED,
           },
         )
-        .getRawMany();
+        .getRawMany<{ id: string }>();
 
-      const mutualIds = mutualRows
-        .map((f) => f.id)
-        .filter((id) => id !== uid && !friendIds.includes(id));
+      const mutualIds = [
+        ...new Set(
+          mutualRows
+            .map((friend) => friend.id)
+            .filter((id) => id !== uid && !friendIds.includes(id)),
+        ),
+      ];
 
+      /*
+       * No mutual connections fallback.
+       */
       if (mutualIds.length === 0) {
-        const fallbackUsers = await this.userRepo
+        const queryBuilder = this.userRepo
           .createQueryBuilder('u')
           .select(this.usersSelect)
           .where('u.id != :uid', { uid })
-          .andWhere('u.id NOT IN (:...friendIds)', { friendIds })
-          .limit(30)
-          .getMany();
+          .andWhere('u.id NOT IN (:...friendIds)', {
+            friendIds,
+          })
+          .limit(30);
+
+        applySearch(queryBuilder);
+
+        const fallbackUsers = await queryBuilder.getMany();
 
         return {
           message: 'People you may know (fallback)',
@@ -305,19 +371,27 @@ export class FriendsService {
         };
       }
 
-      const peopleYouMayKnow = await this.userRepo
+      /*
+       * Return matching mutual connections.
+       */
+      const queryBuilder = this.userRepo
         .createQueryBuilder('u')
         .select(this.usersSelect)
-        .where('u.id IN (:...mutualIds)', { mutualIds })
-        .limit(30)
-        .getMany();
+        .where('u.id IN (:...mutualIds)', {
+          mutualIds,
+        })
+        .limit(30);
+
+      applySearch(queryBuilder);
+
+      const peopleYouMayKnow = await queryBuilder.getMany();
 
       return {
         message: 'People you may know returned successfully',
         code: 200,
         data: peopleYouMayKnow,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -336,6 +410,7 @@ export class FriendsService {
           'sr.status AS status',
           'sr.ongoingDate AS ongoingDate',
           'sr.acceptedDate AS acceptedDate',
+          'sr.status as status',
           `CASE WHEN sr1.id = :uid THEN sr2.id ELSE sr1.id END AS id`,
           `CASE WHEN sr1.id = :uid THEN sr2.username ELSE sr1.username END AS username`,
           `CASE WHEN sr1.id = :uid THEN sr2.firstname ELSE sr1.firstname END AS firstname`,
@@ -343,14 +418,17 @@ export class FriendsService {
           `CASE WHEN sr1.id = :uid THEN sr2.userPfpUrl ELSE sr1.userPfpUrl END AS userPfpUrl`,
         ])
         .where('u.id = :uid', { uid })
+        .andWhere('sr.status = :status', { status: FriendStatus.ONGOING })
         .getRawMany();
+
+      console.log(sentRequests);
 
       return {
         message: 'success',
         code: 200,
         data: sentRequests,
       };
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }
@@ -369,6 +447,7 @@ export class FriendsService {
           'rq.status AS status',
           'rq.ongoingDate AS ongoingDate',
           'rq.acceptedDate AS acceptedDate',
+          'rq.status as status',
           `CASE WHEN rq1.id = :uid THEN rq2.id ELSE rq1.id END AS id`,
           `CASE WHEN rq1.id = :uid THEN rq2.username ELSE rq1.username END AS username`,
           `CASE WHEN rq1.id = :uid THEN rq2.firstname ELSE rq1.firstname END AS firstname`,
@@ -384,7 +463,92 @@ export class FriendsService {
         code: 200,
         data: receivedRequests,
       };
-    } catch (error) {
+    } catch (error: any) {
+      handleError(error);
+    }
+  }
+
+  async GetSuggestedUsers(uid: string) {
+    try {
+      const relationships = await this.friendsRepo
+        .createQueryBuilder('f')
+        .select(['f.user1Id', 'f.user2Id'])
+        .where('(f.user1Id = :uid OR f.user2Id = :uid)', {
+          uid,
+        })
+        .getMany();
+
+      const relatedUserIds = [
+        ...new Set(
+          relationships.map((relationship) =>
+            relationship.user1Id === uid
+              ? relationship.user2Id
+              : relationship.user1Id,
+          ),
+        ),
+      ];
+
+      const queryBuilder = this.userRepo
+        .createQueryBuilder('u')
+        .select(this.usersSelect)
+        .where('u.id != :uid', {
+          uid,
+        });
+
+      if (relatedUserIds.length > 0) {
+        queryBuilder.andWhere('u.id NOT IN (:...relatedUserIds)', {
+          relatedUserIds,
+        });
+      }
+
+      queryBuilder
+        .addSelect(
+          `
+        (
+          CASE
+            WHEN u.isActive = true THEN 15
+            ELSE 0
+          END
+
+          +
+
+          CASE
+            WHEN u.userPfpUrl IS NOT NULL
+              AND u.userPfpUrl != ''
+            THEN 4
+            ELSE 0
+          END
+
+          +
+
+          CASE
+            WHEN u.createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+            THEN 8
+
+            WHEN u.createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            THEN 4
+
+            ELSE 0
+          END
+
+          +
+
+          (RAND() * 5)
+        )
+        `,
+          'suggestionScore',
+        )
+        .orderBy('suggestionScore', 'DESC')
+        .limit(20);
+
+      const suggestedUsers = await queryBuilder.getMany();
+
+      return {
+        message: 'Suggested users returned successfully',
+        code: 200,
+        data: suggestedUsers,
+      };
+    } catch (error: any) {
       handleError(error);
     }
   }

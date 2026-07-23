@@ -1,26 +1,34 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import React, { useState } from "react";
 import {
   CancelOngoingRequest,
   GetPeopleYouMayKnow,
   SendFriendRequest,
 } from "../action";
+import React, { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import Image from "next/image";
 import Loader from "@/app/components/loader";
-import toaster from "@/app/components/toaster";
 import Spinner from "@/app/components/spinner";
+import toaster from "@/app/components/toaster";
+import { useDebounce } from "@/app/constants";
 
-const PeopleYouMayKnow = () => {
+interface IPeopleYouMayKnowProps {
+  query?: string;
+}
+
+const PeopleYouMayKnow = ({ query }: IPeopleYouMayKnowProps) => {
   const client = useQueryClient();
+
+  const debouncedValue = useDebounce(query, 300);
 
   const [PendingId, setPendingId] = useState<string | undefined>();
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
 
   const { data: PeopleYouMayKnow, isPending: getDataPending } = useQuery({
-    queryKey: ["PEOPLEYOUMAYKNOW"],
-    queryFn: GetPeopleYouMayKnow,
+    queryKey: ["PEOPLEYOUMAYKNOW", debouncedValue],
+    queryFn: () => GetPeopleYouMayKnow(debouncedValue),
   });
 
   const { mutate: sendRequestMutate, isPending: sendRequestPending } =
@@ -80,20 +88,30 @@ const PeopleYouMayKnow = () => {
   return (
     <div className="w-full flex flex-col items-start justify-start ">
       {PeopleYouMayKnow?.map((pymn, _index) => {
+        const initials = `${pymn.firstname?.[0] ?? ""}${
+          pymn.lastname?.[0] ?? ""
+        }`.toUpperCase();
+
         return (
           <div
             key={pymn.id ?? _index}
             className=" w-full h-24 border-t flex items-center justify-between py-2 px-10 "
           >
             <div className=" flex gap-4">
-              <div className="w-12 h-12 rounded-full ring-[2.5px] ring-customOlive ">
-                <Image
-                  src={pymn.userPfpUrl}
-                  alt="pfp"
-                  className=" w-full h-full rounded-full"
-                  width={45}
-                  height={45}
-                />
+              <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 ring-[2.5px] ring-elitePurple dark:bg-neutral-700">
+                {pymn.userPfpUrl ? (
+                  <Image
+                    src={pymn.userPfpUrl}
+                    alt={`${pymn.username}'s profile picture`}
+                    fill
+                    sizes="48px"
+                    className="object-cover"
+                  />
+                ) : (
+                  <span className="text-sm font-semibold text-neutral-600 dark:text-neutral-200">
+                    {initials || "U"}
+                  </span>
+                )}
               </div>
               <div>
                 <h1 className=" text-base">{pymn.username}</h1>
@@ -106,7 +124,7 @@ const PeopleYouMayKnow = () => {
               <button
                 onClick={() => handleOnClickAdd(pymn.id)}
                 disabled={pymn.id === PendingId && sendRequestPending}
-                className=" text-xs py-1 px-10 disabled:bg-customDarkOlive active:bg-customDarkOlive text-white rounded-sm bg-customOlive"
+                className=" text-xs py-2 px-10 disabled:bg-elitePurplePressed active:bg-elitePurplePressed font-bold text-white rounded-sm bg-elitePurple"
               >
                 {pymn.id === PendingId && sendRequestPending ? (
                   <Spinner />
@@ -118,7 +136,7 @@ const PeopleYouMayKnow = () => {
               <button
                 onClick={() => handleOnClickCancel(pymn.id)}
                 disabled={pymn.id === PendingId && cancelRequestPending}
-                className=" text-xs py-1 px-10 disabled:bg-neutral-600 active:bg-neutral-600 text-white rounded-sm bg-neutral-500"
+                className=" text-xs py-2 px-10 disabled:bg-neutral-600 active:bg-neutral-600 font-bold text-white rounded-sm bg-neutral-500"
               >
                 {pymn.id === PendingId && cancelRequestPending ? (
                   <Spinner />

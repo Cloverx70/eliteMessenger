@@ -1,6 +1,5 @@
 "use client";
-import Input from "@/app/components/input";
-import { z } from "zod";
+
 import {
   Form,
   FormControl,
@@ -9,13 +8,15 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import Input from "@/app/components/input";
 import Spinner from "@/app/components/spinner";
-import toaster from "@/app/components/toaster";
 import { requestResetPassword } from "../../actions";
+import toaster from "@/app/components/toaster";
+import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 const ResetPasswordSchema = z.object({
   email: z
@@ -43,7 +44,7 @@ export const ResetPasswordForm = () => {
       router.push("/");
       toaster(
         "Success",
-        "if the email you entered is associated with an account, please check your email inbox.."
+        "if the email you entered is associated with an account, please check your email inbox..",
       );
     },
     onError: (e) => {
@@ -56,7 +57,7 @@ export const ResetPasswordForm = () => {
       <form
         className="flex flex-col gap-5 w-full"
         onSubmit={ResetPasswordForm.handleSubmit((data) =>
-          ResetPasswordMutate(data)
+          ResetPasswordMutate(data),
         )}
       >
         <FormField
@@ -76,7 +77,7 @@ export const ResetPasswordForm = () => {
         <button
           type="submit"
           disabled={isPending}
-          className=" bg-customOlive hover:bg-customDarkOlive delay-100 transition-all ease-linear w-full mt-4 py-1.5 text-sm font-normal text-white"
+          className=" bg-elitePurple hover:bg-elitePurplePressed delay-100 transition-all ease-linear w-full mt-4 py-1.5 text-sm font-normal text-white"
         >
           {isPending ? <Spinner /> : "Reset"}
         </button>

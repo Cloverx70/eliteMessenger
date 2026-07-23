@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from 'src/database/entities/user.entity';
-import { handleError } from 'src/utils/handleError.util';
 import { Repository } from 'typeorm';
+import { User } from '../../database/entities/user.entity';
+import { handleError } from '../../utils/handleError.util';
 
 @Injectable()
 export class UserService {
@@ -17,7 +17,7 @@ export class UserService {
       if (!user) throw new NotFoundException('user not found');
 
       return user;
-    } catch (error) {
+    } catch (error: any) {
       handleError(error);
     }
   }

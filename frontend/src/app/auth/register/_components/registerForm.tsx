@@ -1,5 +1,5 @@
 "use client";
-import Spinner from "@/app/components/spinner";
+
 import {
   Form,
   FormControl,
@@ -7,14 +7,16 @@ import {
   FormItem,
   FormMessage,
 } from "@/components/ui/form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
+
 import Input from "@/app/components/input";
-import { useMutation } from "@tanstack/react-query";
+import Spinner from "@/app/components/spinner";
 import { register } from "../../actions";
-import { useRouter } from "next/navigation";
 import toaster from "@/app/components/toaster";
+import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 const RegisterSchema = z
   .object({
@@ -64,7 +66,7 @@ export default function RegisterForm() {
         data.lastname,
         data.email,
         data.password,
-        data.username
+        data.username,
       ),
     onSuccess: () => {
       router.push("/auth/login");
@@ -189,7 +191,7 @@ export default function RegisterForm() {
         <button
           type="submit"
           disabled={isPending}
-          className="w-full h-8 flex items-center justify-center bg-customOlive hover:bg-customDarkOlive delay-100 ease-linear transition-all text-white"
+          className="w-full h-8 flex items-center justify-center bg-elitePurple hover:bg-elitePurplePressed delay-100 ease-linear transition-all text-white"
         >
           {isPending ? <Spinner /> : "Sign up "}
         </button>
