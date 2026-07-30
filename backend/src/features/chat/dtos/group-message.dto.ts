@@ -30,6 +30,10 @@ export class GroupMessageDto {
   @IsUUID()
   sid: string;
 
+  @IsOptional()
+  @IsUUID()
+  sharedPostId?: string;
+
   @IsString()
   text: string;
 

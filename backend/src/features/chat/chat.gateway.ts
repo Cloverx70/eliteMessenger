@@ -7,7 +7,12 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { ForbiddenException, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  ForbiddenException,
+  InternalServerErrorException,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 
 import { ChatService } from './chat.service';
@@ -231,18 +236,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     try {
       const socketUserId = this.getSocketUserId(client);
+
       if (!socketUserId || socketUserId !== dto.sid) {
         throw new ForbiddenException('Invalid socket user');
       }
 
       const result = await this.chatService.SendMessage(dto.crid, dto);
+
+      if (!result?.newMessage) {
+        throw new InternalServerErrorException('Message could not be created');
+      }
+
       const savedMessage = result.newMessage;
 
-      if ((savedMessage.attachments?.length ?? 0) > 0) {
-        for (const attachment of savedMessage.attachments) {
-          attachment.url = await this.s3Service.getFileUrl(attachment.key);
-        }
-      }
+      /*
+       * Do not sign attachments here.
+       *
+       * ChatService.serializeMessage() already returns:
+       * attachment.url
+       *
+       * It also signs:
+       * sharedPost.attachments[].url
+       */
 
       client.emit('message-sent-ack', {
         tempId: dto.tempId,
@@ -250,14 +265,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
 
       if (this.isUserOnline(dto.rid)) {
-        this.emitToUser(dto.rid, 'receiveMessage', {
-          ...savedMessage,
-          tempId: dto.tempId,
-        });
-
         await this.chatService.updateMessageStatus(savedMessage.id, {
           status: 'delivered',
         });
+
+        const deliveredMessage = {
+          ...savedMessage,
+          status: 'delivered' as const,
+          tempId: dto.tempId,
+        };
+
+        this.emitToUser(dto.rid, 'receiveMessage', deliveredMessage);
 
         client.emit('message-delivered-ack', {
           messageId: savedMessage.id,
@@ -265,11 +283,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           status: 'delivered',
         });
 
-        this.emitToUser(dto.rid, 'new-message-notification', savedMessage);
+        this.emitToUser(dto.rid, 'new-message-notification', deliveredMessage);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       client.emit('errorMessage', {
-        message: error.message || 'Internal Server Error',
+        message:
+          error instanceof Error ? error.message : 'Internal Server Error',
       });
     }
   }

@@ -13,6 +13,7 @@ import {
 
 import { ChatRoom } from './chatRoom.entity'; // import your Room entity
 import { MessageAttachment } from './messageAttachment.entity';
+import { Post } from './post.entity';
 import { User } from './user.entity';
 
 @Entity('message')
@@ -21,8 +22,11 @@ export class Message {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ nullable: true })
-  message: string;
+  @Column({
+    type: 'text',
+    nullable: true,
+  })
+  message: string | null;
 
   @ManyToOne(() => ChatRoom, (chatRoom) => chatRoom.messages)
   @JoinColumn({ name: 'chatroomId' })
@@ -53,6 +57,16 @@ export class Message {
     default: 'delivered',
   })
   status: 'pending' | 'sent' | 'delivered' | 'seen';
+
+  @Column('uuid', { nullable: true })
+  sharedPostId: string | null;
+
+  @ManyToOne(() => Post, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'sharedPostId' })
+  sharedPost: Post | null;
 
   @CreateDateColumn()
   createdAt: Date;

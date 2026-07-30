@@ -192,7 +192,7 @@ const FriendRequestsPanel = () => {
                     <button
                       type="button"
                       disabled={requestIsPending}
-                      onClick={() => handleDecline(request.id)}
+                      onClick={() => handleDecline(requestId)}
                       className="flex h-9 min-w-24 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
                       {requestIsPending && declinePending ? (
@@ -208,7 +208,7 @@ const FriendRequestsPanel = () => {
                     <button
                       type="button"
                       disabled={requestIsPending}
-                      onClick={() => handleAccept(request.id)}
+                      onClick={() => handleAccept(requestId)}
                       className="flex h-9 min-w-24 items-center justify-center gap-2 rounded-xl bg-elitePurple px-4 text-xs font-semibold text-white transition-transform hover:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {requestIsPending && acceptPending ? (

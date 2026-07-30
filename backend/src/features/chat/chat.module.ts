@@ -12,6 +12,7 @@ import { GroupMessageReceipt } from '../../database/entities/groupMessageReceipt
 import { Message } from '../../database/entities/message.entity';
 import { MessageAttachment } from '../../database/entities/messageAttachment.entity';
 import { Module } from '@nestjs/common';
+import { Post } from '../../database/entities/post.entity';
 import { S3Module } from '../../utils/s3/s3.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../database/entities/user.entity';
@@ -28,6 +29,7 @@ import { User } from '../../database/entities/user.entity';
       GroupMessage,
       GroupMessageAttachment,
       GroupMessageReceipt,
+      Post,
     ]),
     S3Module,
   ],

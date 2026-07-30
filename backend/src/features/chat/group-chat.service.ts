@@ -136,49 +136,108 @@ export class GroupChatService {
       (message.receipts
         ? {
             totalRecipients: message.receipts.length,
+
             deliveredCount: message.receipts.filter((receipt) =>
               Boolean(receipt.deliveredAt),
             ).length,
+
             seenCount: message.receipts.filter((receipt) =>
               Boolean(receipt.seenAt),
             ).length,
+
             status: this.statusFromCounts(
               message.receipts.length,
+
               message.receipts.filter((receipt) => Boolean(receipt.deliveredAt))
                 .length,
+
               message.receipts.filter((receipt) => Boolean(receipt.seenAt))
                 .length,
             ),
           }
         : await this.GetMessageReceiptSummary(message.id));
 
+    /*
+     * Normal message attachments
+     */
     const attachments = await Promise.all(
-      (message.attachments ?? []).map(async (attachment) => ({
-        id: attachment.id,
-        key: attachment.key,
-        type: attachment.type,
-        size: attachment.size,
-        createdAt: attachment.createdAt,
-        url: await this.s3Service.getFileUrl(attachment.key),
-      })),
+      (message.attachments ?? []).map(async (attachment) => {
+        const { url } = await this.s3Service.getFileUrl(attachment.key);
+
+        return {
+          id: attachment.id,
+          type: attachment.type,
+          size: attachment.size ?? null,
+          createdAt: attachment.createdAt,
+          url,
+        };
+      }),
     );
+
+    /*
+     * Shared Discover post
+     */
+    const sharedPost = message.sharedPost
+      ? {
+          id: message.sharedPost.id,
+          authorId: message.sharedPost.authorId,
+          caption: message.sharedPost.caption,
+          visibility: message.sharedPost.visibility,
+          commentsEnabled: message.sharedPost.commentsEnabled,
+
+          likeCount: message.sharedPost.likeCount,
+          commentCount: message.sharedPost.commentCount,
+          shareCount: message.sharedPost.shareCount,
+
+          createdAt: message.sharedPost.createdAt,
+          updatedAt: message.sharedPost.updatedAt,
+
+          author: this.safeUser(message.sharedPost.author),
+
+          attachments: await Promise.all(
+            [...(message.sharedPost.attachments ?? [])]
+              .sort(
+                (firstAttachment, secondAttachment) =>
+                  firstAttachment.displayOrder - secondAttachment.displayOrder,
+              )
+              .map(async (attachment) => {
+                const { url } = await this.s3Service.getFileUrl(attachment.key);
+
+                const { key, post, ...safeAttachment } = attachment;
+
+                return {
+                  ...safeAttachment,
+                  url,
+                };
+              }),
+          ),
+        }
+      : null;
 
     return {
       id: message.id,
       message: message.message ?? '',
+
       groupId: message.groupId,
+
       senderId: message.senderId ?? null,
       sid: message.senderId ?? null,
+
       sender: this.safeUser(message.sender),
+
       attachments,
+
+      sharedPostId: message.sharedPostId ?? null,
+      sharedPost,
+
       status: summary.status,
       receiptSummary: summary,
+
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,
       deletedAt: message.deletedAt ?? null,
     };
   }
-
   async CreateGroup(creatorId: string, dto: CreateGroupDto) {
     try {
       const uniqueMemberIds = [...new Set(dto.memberIds)].filter(
@@ -420,13 +479,25 @@ export class GroupChatService {
       const safePage = Math.max(Number(page) || 1, 1);
 
       const [messages, total] = await this.messageRepo.findAndCount({
-        where: { groupId },
+        where: {
+          groupId,
+        },
+
         relations: {
           attachments: true,
           sender: true,
           receipts: true,
+
+          sharedPost: {
+            author: true,
+            attachments: true,
+          },
         },
-        order: { createdAt: 'ASC' },
+
+        order: {
+          createdAt: 'ASC',
+        },
+
         skip: (safePage - 1) * safeLimit,
         take: safeLimit,
       });
@@ -495,7 +566,7 @@ export class GroupChatService {
 
         for (const attachment of message.attachments ?? []) {
           media.push({
-            url: await this.s3Service.getFileUrl(attachment.key),
+            url: (await this.s3Service.getFileUrl(attachment.key)).url,
             type: attachment.type,
           });
         }
@@ -792,11 +863,19 @@ export class GroupChatService {
         await manager.save(GroupChat, group);
 
         const completeMessage = await manager.findOne(GroupMessage, {
-          where: { id: savedMessage.id },
+          where: {
+            id: savedMessage.id,
+          },
+
           relations: {
             attachments: true,
             sender: true,
             receipts: true,
+
+            sharedPost: {
+              author: true,
+              attachments: true,
+            },
           },
         });
 

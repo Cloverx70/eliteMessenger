@@ -69,6 +69,17 @@ export const FilterPillsLabels = [
   { label: "Unread" },
 ];
 
+export const MediaFilterPills = [
+  { label: "All", default: true },
+  { label: "Photos", default: false },
+  { label: "Videos", default: false },
+  { label: "Gifs", default: false },
+  { label: "Files", default: false },
+  { label: "Links", default: false },
+];
+
+export const MediaSources = ["All Sources", "Chats", "Group chats", "Posts"];
+
 export const ChatroomProfileLinks = [
   {
     label: "Profile",

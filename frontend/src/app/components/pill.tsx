@@ -8,7 +8,7 @@ interface PillProps {
 const Pill: React.FC<PillProps> = ({ text, isDefault }) => {
   return (
     <div
-      className={`w-auto h-auto cursor-pointer text-sm px-4 py-1  rounded-full border ${
+      className={`w-auto h-auto cursor-pointer text-sm font-bold text-slate-600 px-4 py-1  rounded-full border ${
         isDefault ? "bg-elitePurplePressed border-none text-white" : ""
       }`}
     >

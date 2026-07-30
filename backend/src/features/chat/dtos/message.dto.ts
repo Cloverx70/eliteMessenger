@@ -33,6 +33,10 @@ export default class MessageDto {
   @IsUUID()
   rid: string;
 
+  @IsOptional()
+  @IsUUID()
+  sharedPostId?: string;
+
   @IsString()
   text: string;
 

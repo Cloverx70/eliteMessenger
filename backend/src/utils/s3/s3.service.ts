@@ -14,6 +14,10 @@ import { ConfigService } from '@nestjs/config';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 
+export interface SignedFileUrls {
+  url: string;
+  blurUrl?: string;
+}
 @Injectable()
 export class S3Service {
   private readonly s3: S3Client;
@@ -79,18 +83,35 @@ export class S3Service {
   /**
    * Get Signed URL
    */
-  async getFileUrl(key: string, expiresIn = 3600): Promise<string> {
-    try {
-      const command = new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-      });
 
-      return await getSignedUrl(this.s3, command, {
-        expiresIn,
-      });
-    } catch (err) {
-      console.error(err);
+  async getFileUrl(
+    key: string,
+    expiresIn = 3600,
+    blurKey?: string | null,
+  ): Promise<SignedFileUrls> {
+    try {
+      const createSignedUrl = async (objectKey: string): Promise<string> => {
+        const command = new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: objectKey,
+        });
+
+        return getSignedUrl(this.s3, command, {
+          expiresIn,
+        });
+      };
+
+      const [url, blurUrl] = await Promise.all([
+        createSignedUrl(key),
+        blurKey ? createSignedUrl(blurKey) : Promise.resolve(undefined),
+      ]);
+
+      return {
+        url,
+        ...(blurUrl ? { blurUrl } : {}),
+      };
+    } catch (error) {
+      console.error('Failed to generate signed file URL:', error);
 
       throw new NotFoundException('Could not generate file URL.');
     }

@@ -12,7 +12,14 @@ import { GroupChat } from './groupChat.entity';
 import { GroupMember } from './groupMember.entity';
 import { GroupMessage } from './groupMessage.entity';
 import { GroupMessageReceipt } from './groupMessageReceipt.entity';
+import { HiddenPost } from './hiddenPosts.entity';
 import { Message } from './message.entity';
+import { Post } from './post.entity';
+import { PostComment } from './postComment.entity';
+import { PostLike } from './postLike.entity';
+import { PostReport } from './postReport.entity';
+import { PostShare } from './postShare.entity';
+import { SavedPost } from './postSave.entity';
 
 @Entity('user')
 export class User {
@@ -72,6 +79,34 @@ export class User {
 
   @Column({ type: 'boolean', default: false })
   isAdmin: boolean = false;
+
+  // Posts created by this user
+  @OneToMany(() => Post, (post) => post.author)
+  posts: Post[];
+
+  // Posts liked by this user
+  @OneToMany(() => PostLike, (postLike) => postLike.user)
+  postLikes: PostLike[];
+
+  // Comments written by this user
+  @OneToMany(() => PostComment, (comment) => comment.author)
+  postComments: PostComment[];
+
+  // Posts saved by this user
+  @OneToMany(() => SavedPost, (savedPost) => savedPost.user)
+  savedPosts: SavedPost[];
+
+  // Posts shared by this user
+  @OneToMany(() => PostShare, (postShare) => postShare.sender)
+  postShares: PostShare[];
+
+  // Posts reported by this user
+  @OneToMany(() => PostReport, (report) => report.reporter)
+  postReports: PostReport[];
+
+  // Posts hidden by this user
+  @OneToMany(() => HiddenPost, (hiddenPost) => hiddenPost.user)
+  hiddenPosts: HiddenPost[];
 
   @OneToMany(() => Friends, (friend) => friend.user1, { onDelete: 'CASCADE' })
   sentRequests: Friends[];
