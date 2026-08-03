@@ -127,4 +127,19 @@ export class AuthController {
 
     return res.status(200).json({ message: response.message });
   }
+
+  @Post('logout')
+  logout(@Res() res: Response) {
+    res.clearCookie('ELITE_ERA_AUTH_TOKEN', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+    });
+
+    return res.status(200).json({
+      message: 'Logged out successfully',
+      code: 200,
+    });
+  }
 }

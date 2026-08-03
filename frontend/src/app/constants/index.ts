@@ -143,3 +143,125 @@ export default function get12hrTiming(dateInput: Date | string): string {
     })
     .toLowerCase();
 }
+
+export const routeMetadata = {
+  home: {
+    title: "Home",
+    description:
+      "Welcome to Elite Messenger, a modern social messaging platform for connecting, chatting, sharing, and discovering new people.",
+  },
+
+  chats: {
+    title: "Chats",
+    description:
+      "View your private conversations, send messages, share attachments, and stay connected with friends on Elite Messenger.",
+  },
+
+  chatroom: {
+    title: "Conversation",
+    description:
+      "Continue a private conversation and exchange messages, media, files, links, and shared posts on Elite Messenger.",
+  },
+
+  groups: {
+    title: "Group Chats",
+    description:
+      "Create group conversations, manage members, share media, and connect with multiple people through Elite Messenger.",
+  },
+
+  groupRoom: {
+    title: "Group Conversation",
+    description:
+      "Chat with group members, share attachments, manage conversations, and follow group activity on Elite Messenger.",
+  },
+
+  discover: {
+    title: "Discover",
+    description:
+      "Explore posts, discover new people, interact with content, and expand your network on Elite Messenger.",
+  },
+
+  createPost: {
+    title: "Create Post",
+    description:
+      "Create and publish a new post with captions, photos, videos, and audience controls on Elite Messenger.",
+  },
+
+  media: {
+    title: "Media",
+    description:
+      "Browse photos, videos, GIFs, documents, files, and links shared across your Elite Messenger conversations.",
+  },
+
+  mediaPreview: {
+    title: "Media Preview",
+    description:
+      "Preview shared media, view attachment information, and return to the original Elite Messenger conversation.",
+  },
+
+  notifications: {
+    title: "Notifications",
+    description:
+      "View message alerts, friend requests, post interactions, group updates, and other Elite Messenger activity.",
+  },
+
+  friends: {
+    title: "Friends",
+    description:
+      "Find people, manage friend requests, explore suggested users, and grow your Elite Messenger network.",
+  },
+
+  profile: {
+    title: "Profile",
+    description:
+      "View and manage your Elite Messenger profile, posts, shared media, friends, groups, and account information.",
+  },
+
+  publicProfile: {
+    title: "User Profile",
+    description:
+      "View a user’s Elite Messenger profile, posts, media, mutual friends, groups, and public information.",
+  },
+
+  editProfile: {
+    title: "Edit Profile",
+    description:
+      "Update your name, username, biography, profile picture, banner, and personal information on Elite Messenger.",
+  },
+
+  login: {
+    title: "Log In",
+    description:
+      "Log in to Elite Messenger to access your conversations, friends, groups, posts, media, and notifications.",
+  },
+
+  register: {
+    title: "Create Account",
+    description:
+      "Create your Elite Messenger account and start connecting, messaging, sharing, and discovering new people.",
+  },
+
+  forgotPassword: {
+    title: "Forgot Password",
+    description:
+      "Recover access to your Elite Messenger account by requesting a secure password reset.",
+  },
+
+  resetPassword: {
+    title: "Reset Password",
+    description:
+      "Create a new secure password and restore access to your Elite Messenger account.",
+  },
+
+  settings: {
+    title: "Settings",
+    description:
+      "Manage your Elite Messenger account, privacy, appearance, notifications, security, and application preferences.",
+  },
+
+  notFound: {
+    title: "Page Not Found",
+    description:
+      "The requested Elite Messenger page could not be found or may no longer be available.",
+  },
+};

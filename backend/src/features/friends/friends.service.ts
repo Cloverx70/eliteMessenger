@@ -11,6 +11,11 @@ import { ChatService } from '../chat/chat.service';
 import { Friends, FriendStatus } from '../../database/entities/friends.entity';
 import { User } from '../../database/entities/user.entity';
 import { handleError } from '../../utils/handleError.util';
+import {
+  CreateNotificationCauseInput,
+  NotificationCause,
+  NotificationsService,
+} from '../notifications/notifications.service';
 
 @Injectable()
 export class FriendsService {
@@ -20,6 +25,7 @@ export class FriendsService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly chatService: ChatService,
+    private readonly notificationService: NotificationsService,
   ) {}
 
   usersSelect = [
@@ -59,36 +65,124 @@ export class FriendsService {
     }
   }
   async sendFriendRequest(sid: string, rid: string) {
-    // Worst Case O(Log N) && Best Case O(1)
     try {
-      if (sid === rid) throw new BadRequestException('cannot friend yourself');
+      if (sid === rid) {
+        throw new BadRequestException(
+          'Cannot send a friend request to yourself',
+        );
+      }
 
-      const RequestExists = await this.friendsRepo
+      const requestExists = await this.friendsRepo
         .createQueryBuilder('f')
         .where(
-          '(f.user1Id = :sid AND f.user2Id =  :rid) OR (f.user1Id = :rid AND f.user2Id =  :sid)',
-          { sid, rid },
+          `(
+          f.user1Id = :sid
+          AND f.user2Id = :rid
+        ) OR (
+          f.user1Id = :rid
+          AND f.user2Id = :sid
+        )`,
+          {
+            sid,
+            rid,
+          },
         )
         .getOne();
 
-      if (RequestExists) {
-        if (RequestExists.status === FriendStatus.ONGOING)
-          throw new BadRequestException('Request already sent..');
+      if (requestExists) {
+        if (requestExists.status === FriendStatus.ONGOING) {
+          throw new BadRequestException('Request already sent');
+        }
 
-        if (RequestExists.status === FriendStatus.ACCEPTED)
-          throw new BadRequestException('Users already friends..');
+        if (requestExists.status === FriendStatus.ACCEPTED) {
+          throw new BadRequestException('Users are already friends');
+        }
       }
 
-      await this.friendsRepo
-        .createQueryBuilder()
-        .insert()
-        .into(Friends)
-        .values({
+      const newRequest = await this.friendsRepo.save(
+        this.friendsRepo.create({
           user1Id: sid,
           user2Id: rid,
           status: FriendStatus.ONGOING,
+        }),
+      );
+
+      /*
+       * Get accepted friendships involving either the sender
+       * or the receiver.
+       *
+       * This is only used to calculate the number included
+       * in the notification.
+       */
+      const acceptedFriendships = await this.friendsRepo
+        .createQueryBuilder('friend')
+        .where('friend.status = :acceptedStatus', {
+          acceptedStatus: FriendStatus.ACCEPTED,
         })
-        .execute();
+        .andWhere(
+          `(
+          friend.user1Id IN (:...userIds)
+          OR friend.user2Id IN (:...userIds)
+        )`,
+          {
+            userIds: [sid, rid],
+          },
+        )
+        .getMany();
+
+      const senderFriendIds = new Set<string>();
+      const receiverFriendIds = new Set<string>();
+
+      for (const friendship of acceptedFriendships) {
+        /*
+         * Extract the friend on the opposite side of the
+         * sender's accepted friendship.
+         */
+        if (friendship.user1Id === sid) {
+          senderFriendIds.add(friendship.user2Id);
+        } else if (friendship.user2Id === sid) {
+          senderFriendIds.add(friendship.user1Id);
+        }
+
+        /*
+         * Extract the friend on the opposite side of the
+         * receiver's accepted friendship.
+         */
+        if (friendship.user1Id === rid) {
+          receiverFriendIds.add(friendship.user2Id);
+        } else if (friendship.user2Id === rid) {
+          receiverFriendIds.add(friendship.user1Id);
+        }
+      }
+
+      /*
+       * Defensive cleanup: neither the sender nor receiver
+       * should be counted as a mutual friend.
+       */
+      senderFriendIds.delete(sid);
+      senderFriendIds.delete(rid);
+
+      receiverFriendIds.delete(sid);
+      receiverFriendIds.delete(rid);
+
+      const mutualFriendCount = [...senderFriendIds].filter((friendId) =>
+        receiverFriendIds.has(friendId),
+      ).length;
+
+      /*
+       * The mutual count is used only in the notification.
+       */
+      const friendRequestReceivedNotification: CreateNotificationCauseInput = {
+        cause: NotificationCause.FRIEND_REQUEST_RECEIVED,
+        actorId: sid,
+        recipientId: rid,
+        friendRequestId: newRequest.id,
+        mutualFriendCount,
+      };
+
+      await this.notificationService.createFromCause(
+        friendRequestReceivedNotification,
+      );
 
       return {
         message: 'Friend request sent successfully',
@@ -126,6 +220,18 @@ export class FriendsService {
         request.status = manageRequestDto.status;
         request.acceptedDate = new Date();
         await this.friendsRepo.save(request);
+
+        const friendRequestAcceptedNotification: CreateNotificationCauseInput =
+          {
+            cause: NotificationCause.FRIEND_REQUEST_ACCEPTED,
+            actorId: request.user2Id,
+            recipientId: uid,
+            friendRequestId: request.id,
+          };
+
+        await this.notificationService.createFromCause(
+          friendRequestAcceptedNotification,
+        );
 
         await this.chatService.CreateChatRoom({
           uid1: request.user1Id,

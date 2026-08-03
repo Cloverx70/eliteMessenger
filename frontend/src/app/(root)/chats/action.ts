@@ -1,4 +1,5 @@
 import { AxiosResponse } from "axios";
+import { DiscoverPost } from "../discover/types";
 import { IUser } from "@/app/auth/actions";
 import ServerEndpoint from "@/lib/server-endpoint";
 import { handleError } from "@/app/constants";
@@ -47,6 +48,10 @@ export interface ITempMessage {
   createdAt: Date;
   deletedAt?: Date | null;
   updatedAt: Date;
+
+  sharedPostId: string | null;
+  sharedPost: DiscoverPost | null;
+
   attachments?: IAttachment[];
   status: "pending" | "sent" | "delivered" | "seen";
   tempId?: string;

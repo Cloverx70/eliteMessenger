@@ -6,6 +6,7 @@ import { GroupMessage } from '../../database/entities/groupMessage.entity';
 import { HiddenPost } from '../../database/entities/hiddenPosts.entity';
 import { Message } from '../../database/entities/message.entity';
 import { Module } from '@nestjs/common';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { Post } from '../../database/entities/post.entity';
 import { PostAttachment } from '../../database/entities/postAttachment.entity';
 import { PostComment } from '../../database/entities/postComment.entity';
@@ -37,6 +38,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
       GroupMessage,
     ]),
     S3Module,
+    NotificationsModule,
   ],
   controllers: [PostsController],
   providers: [PostsService],

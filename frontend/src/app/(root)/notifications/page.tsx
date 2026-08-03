@@ -1,5 +1,5 @@
+import { NotificationsShell } from "./_components/notifications-shell";
+
 export default function NotificationsPage() {
-  return (
-    <section className=" w-full min-h-screen flex flex-col items-start justify-start"></section>
-  );
+  return <NotificationsShell />;
 }

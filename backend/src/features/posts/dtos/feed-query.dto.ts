@@ -35,9 +35,7 @@ export class FeedQueryDto {
   limit: number = 15;
 
   @IsOptional()
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(100)
   search?: string;

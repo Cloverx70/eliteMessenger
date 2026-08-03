@@ -1,247 +1,494 @@
 "use client";
 
 import {
-  DirectDeliveredAck,
-  DirectSentAck,
-  useSocket,
-} from "@/app/hooks/useSocket";
-import { GetChatroomAndMesseges, IMessage } from "../../chats/action";
-import React, { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import {
+  Check,
+  Search,
+  UserPlus,
+  X,
+} from "lucide-react";
+import {
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 
-import { BsThreeDotsVertical } from "react-icons/bs";
-import { CiSearch } from "react-icons/ci";
-import { IUser } from "@/app/auth/actions";
-import Image from "next/image";
-import Message from "../../chats/_components/Message";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import SendInput from "../../chats/_components/SendInput";
-import Spinner from "@/app/components/spinner";
-import { useChatStore } from "@/app/stores/ChatStore";
-import { useParams } from "next/navigation";
+import {
+  AddGroupMembers,
+  IGroupUser,
+} from "../group-action";
 
-type RoomChatProps = {
-  user: IUser;
+type AddGroupMembersModalProps = {
+  open: boolean;
+  onClose: () => void;
+  groupId: string;
+  availableUsers: IGroupUser[];
+  existingUserIds: string[];
 };
 
-const RoomChat = ({ user }: RoomChatProps) => {
-  const { cid } = useParams();
-  const queryClient = useQueryClient();
-  const safeCid = Array.isArray(cid) ? cid[0] : (cid ?? "");
-  const clearUnread = useChatStore((state) => state.clearUnread);
+const AddGroupMembersModal = ({
+  open,
+  onClose,
+  groupId,
+  availableUsers,
+  existingUserIds,
+}: AddGroupMembersModalProps) => {
+  const queryClient =
+    useQueryClient();
 
-  const {
-    joinRoom,
-    leaveRoom,
-    onMessage,
-    offMessage,
-    onSentACK,
-    onDeliveredACK,
-    onSeenACK,
-    messageSeen,
-    socketRef,
-  } = useSocket(user.id);
+  const [search, setSearch] =
+    useState("");
+  const [
+    selectedIds,
+    setSelectedIds,
+  ] = useState<string[]>([]);
 
-  const {
-    data: chatroomAndMessages,
-    isLoading,
-    isPending,
-  } = useQuery({
-    queryKey: ["CHATROOMANDMESSAGES", safeCid],
-    queryFn: () => GetChatroomAndMesseges(safeCid, 200, 1),
-    enabled: Boolean(safeCid),
-  });
+  const candidates = useMemo(() => {
+    const existing = new Set(
+      existingUserIds,
+    );
 
-  const [messages, setMessages] = useState<IMessage[]>([]);
+    const normalized = search
+      .trim()
+      .toLowerCase();
 
-  useEffect(() => {
-    if (chatroomAndMessages?.chatRoomMessages) {
-      setMessages(chatroomAndMessages.chatRoomMessages);
-    }
-  }, [chatroomAndMessages]);
-
-  useEffect(() => {
-    if (!safeCid) return;
-    clearUnread(safeCid);
-    queryClient.invalidateQueries({
-      queryKey: ["CHATROOMINFO", safeCid],
-    });
-  }, [clearUnread, queryClient, safeCid]);
-
-  useEffect(() => {
-    if (!safeCid) return;
-
-    joinRoom(safeCid, user.id);
-    return () => leaveRoom(safeCid, user.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [safeCid, user.id]);
-
-  useEffect(() => {
-    if (!safeCid || !chatroomAndMessages?.chatRoomMessages) return;
-
-    messageSeen(safeCid, user.id);
-    clearUnread(safeCid);
-    queryClient.invalidateQueries({ queryKey: ["CHATROOMS"] });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [safeCid, chatroomAndMessages?.chatRoomMessages, user.id]);
-
-  useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket || !safeCid) return;
-
-    const handleSentAck = (ack: DirectSentAck) => {
-      setMessages((previous) =>
-        previous.map((message) =>
-          message.id === ack.tempId || message.tempId === ack.tempId
-            ? {
-                ...ack.message,
-                tempId: ack.tempId,
-                status: "sent",
-              }
-            : message,
-        ),
-      );
-
-      queryClient.invalidateQueries({ queryKey: ["CHATROOMS"] });
-    };
-
-    const handleNewMessage = (message: IMessage) => {
-      if (message.sid === user.id || message.chatroomId !== safeCid) return;
-
-      setMessages((previous) => {
-        const exists = previous.some(
-          (current) =>
-            current.id === message.id ||
-            (message.tempId && current.tempId === message.tempId),
-        );
-
-        if (exists) {
-          return previous.map((current) =>
-            current.id === message.id ||
-            (message.tempId && current.tempId === message.tempId)
-              ? { ...current, ...message }
-              : current,
-          );
+    return availableUsers.filter(
+      (user) => {
+        if (existing.has(user.id)) {
+          return false;
         }
 
-        return [...previous, message];
-      });
+        if (!normalized) {
+          return true;
+        }
 
-      messageSeen(safeCid, user.id);
-      clearUnread(safeCid);
-      queryClient.invalidateQueries({ queryKey: ["CHATROOMS"] });
+        return [
+          user.username,
+          user.firstname,
+          user.lastname,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(normalized);
+      },
+    );
+  }, [
+    availableUsers,
+    existingUserIds,
+    search,
+  ]);
+
+  const resetAndClose = () => {
+    if (
+      addMutation.isPending
+    ) {
+      return;
+    }
+
+    setSearch("");
+    setSelectedIds([]);
+    onClose();
+  };
+
+  const addMutation = useMutation({
+    mutationFn: () =>
+      AddGroupMembers(
+        groupId,
+        selectedIds,
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [
+            "GROUP_INFO",
+            groupId,
+          ],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [
+            "GROUP_AND_MESSAGES",
+            groupId,
+          ],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["GROUPS"],
+        }),
+      ]);
+
+      setSearch("");
+      setSelectedIds([]);
+      onClose();
+    },
+  });
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow =
+      document.body.style.overflow;
+
+    document.body.style.overflow =
+      "hidden";
+
+    const handleEscape = (
+      event: KeyboardEvent,
+    ) => {
+      if (
+        event.key === "Escape" &&
+        !addMutation.isPending
+      ) {
+        resetAndClose();
+      }
     };
 
-    const handleDeliveredAck = (ack: DirectDeliveredAck) => {
-      setMessages((previous) =>
-        previous.map((message) =>
-          message.id === ack.messageId ||
-          (ack.tempId &&
-            (message.id === ack.tempId || message.tempId === ack.tempId))
-            ? { ...message, status: "delivered" }
-            : message,
-        ),
-      );
-    };
-
-    const handleSeenAck = (ack: { messageId: string }) => {
-      setMessages((previous) =>
-        previous.map((message) =>
-          message.id === ack.messageId
-            ? { ...message, status: "seen" }
-            : message,
-        ),
-      );
-
-      queryClient.invalidateQueries({ queryKey: ["CHATROOMS"] });
-    };
-
-    onSentACK(handleSentAck);
-    onMessage(handleNewMessage);
-    onDeliveredACK(handleDeliveredAck);
-    onSeenACK(handleSeenAck);
+    window.addEventListener(
+      "keydown",
+      handleEscape,
+    );
 
     return () => {
-      offMessage(handleNewMessage);
-      socket.off("message-sent-ack", handleSentAck);
-      socket.off("message-delivered-ack", handleDeliveredAck);
-      socket.off("message-seen-ack", handleSeenAck);
+      document.body.style.overflow =
+        previousOverflow;
+
+      window.removeEventListener(
+        "keydown",
+        handleEscape,
+      );
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [safeCid, user.id]);
+  }, [
+    open,
+    addMutation.isPending,
+  ]);
 
-  if (isLoading || isPending || !chatroomAndMessages?.chatroom) {
-    return (
-      <div className="flex h-full w-full items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  }
-
-  const chatroom = chatroomAndMessages.chatroom;
+  if (!open) return null;
 
   return (
-    <div className="flex h-full w-full flex-col border-r">
-      <div className="z-10 flex items-center justify-between gap-5 px-4 py-3">
-        <div className="flex items-center justify-start gap-5">
-          <Image
-            src={chatroom.recUserPfpUrl || "/default-avatar.png"}
-            width={35}
-            height={35}
-            className="h-[35px] w-[35px] rounded-full object-cover"
-            alt="User profile"
-          />
+    <div
+      className="
+        fixed
+        inset-0
+        z-[90]
+        flex
+        items-end
+        justify-center
+        bg-black/50
+        p-0
+        backdrop-blur-sm
+        sm:items-center
+        sm:p-4
+      "
+      onClick={resetAndClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-members-title"
+        className="
+          flex
+          max-h-[92dvh]
+          w-full
+          flex-col
+          overflow-hidden
+          rounded-t-3xl
+          bg-white
+          shadow-2xl
+          dark:bg-slate-950
+          sm:max-h-[82dvh]
+          sm:max-w-lg
+          sm:rounded-3xl
+        "
+        onClick={(event) =>
+          event.stopPropagation()
+        }
+      >
+        <header
+          className="
+            flex
+            shrink-0
+            items-center
+            justify-between
+            border-b
+            border-slate-200
+            px-4
+            py-4
+            dark:border-slate-800
+            sm:px-6
+          "
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-elitePurple/10 text-elitePurple">
+              <UserPlus size={20} />
+            </span>
 
-          <div>
-            <h1 className="text-lg font-bold text-customBlack">
-              {chatroom.recUsername}
-            </h1>
-            <div className="flex items-center justify-start gap-2">
-              <div
-                className={`h-2 w-2 rounded-full ${
-                  chatroom.recIsActive ? "bg-green-500" : "bg-slate-400"
-                }`}
-              />
-              <p className="text-xs">
-                {chatroom.recIsActive ? "Online" : "Offline"}
+            <div className="min-w-0">
+              <h2
+                id="add-members-title"
+                className="truncate text-lg font-black text-slate-900 dark:text-white"
+              >
+                Add members
+              </h2>
+
+              <p className="text-xs text-slate-500">
+                {selectedIds.length} selected
               </p>
             </div>
           </div>
-        </div>
 
-        <div className="flex items-center justify-center gap-2">
-          <CiSearch size={25} className="cursor-pointer text-slate-500" />
-          <BsThreeDotsVertical
-            size={23}
-            className="cursor-pointer text-slate-500"
-          />
-        </div>
-      </div>
+          <button
+            type="button"
+            onClick={resetAndClose}
+            aria-label="Close add members"
+            className="
+              flex
+              h-11
+              w-11
+              items-center
+              justify-center
+              rounded-full
+              bg-slate-100
+              text-slate-700
+              dark:bg-slate-900
+              dark:text-white
+            "
+          >
+            <X size={20} />
+          </button>
+        </header>
 
-      <ScrollArea className="min-h-0 flex-1 px-5 py-2">
-        <div className="flex flex-col gap-1">
-          {messages.map((message, index, array) => (
-            <Message
-              key={message.id}
-              isSender={message.sid === user.id}
-              message={message}
-              isLast={index === array.length - 1}
+        <div className="shrink-0 p-4 pb-2 sm:px-6 sm:pt-5">
+          <label
+            className="
+              flex
+              h-12
+              items-center
+              gap-2
+              rounded-xl
+              border
+              border-slate-200
+              px-4
+              dark:border-slate-700
+            "
+          >
+            <Search
+              size={18}
+              className="text-slate-400"
             />
-          ))}
-        </div>
-      </ScrollArea>
 
-      <div className="px-4 py-4">
-        <SendInput
-          crid={safeCid}
-          user={user}
-          rid={chatroom.recId}
-          setMessages={setMessages}
-          chatroom={chatroom}
-        />
+            <input
+              value={search}
+              onChange={(event) =>
+                setSearch(
+                  event.target.value,
+                )
+              }
+              placeholder="Search users"
+              className="
+                min-w-0
+                flex-1
+                bg-transparent
+                text-sm
+                text-slate-900
+                outline-none
+                dark:text-white
+              "
+            />
+          </label>
+        </div>
+
+        <div
+          className="
+            min-h-0
+            flex-1
+            overflow-y-auto
+            overscroll-contain
+            p-4
+            pt-2
+            sm:px-6
+          "
+        >
+          <div className="space-y-2">
+            {candidates.length > 0 ? (
+              candidates.map(
+                (user) => {
+                  const selected =
+                    selectedIds.includes(
+                      user.id,
+                    );
+
+                  const initials =
+                    `${user.firstname?.[0] ?? ""}${user.lastname?.[0] ?? ""}`.toUpperCase();
+
+                  return (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedIds(
+                          (
+                            previous,
+                          ) =>
+                            selected
+                              ? previous.filter(
+                                  (
+                                    id,
+                                  ) =>
+                                    id !==
+                                    user.id,
+                                )
+                              : [
+                                  ...previous,
+                                  user.id,
+                                ],
+                        )
+                      }
+                      className={`
+                        flex
+                        min-h-16
+                        w-full
+                        min-w-0
+                        items-center
+                        justify-between
+                        gap-3
+                        rounded-2xl
+                        border
+                        p-3
+                        text-left
+                        transition
+                        ${
+                          selected
+                            ? "border-elitePurple bg-elitePurple/5"
+                            : "border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900"
+                        }
+                      `}
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-elitePurple/10 text-xs font-black text-elitePurple">
+                          {user.userPfpUrl ? (
+                            <img
+                              src={
+                                user.userPfpUrl
+                              }
+                              alt={
+                                user.username
+                              }
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            initials ||
+                            "U"
+                          )}
+                        </span>
+
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-black text-slate-900 dark:text-white">
+                            {
+                              user.firstname
+                            }{" "}
+                            {
+                              user.lastname
+                            }
+                          </span>
+
+                          <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+                            @
+                            {
+                              user.username
+                            }
+                          </span>
+                        </span>
+                      </div>
+
+                      <span
+                        className={`
+                          flex
+                          h-5
+                          w-5
+                          shrink-0
+                          items-center
+                          justify-center
+                          rounded-full
+                          border
+                          ${
+                            selected
+                              ? "border-elitePurple bg-elitePurple text-white"
+                              : "border-slate-300 dark:border-slate-600"
+                          }
+                        `}
+                      >
+                        {selected ? (
+                          <Check
+                            size={13}
+                          />
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                },
+              )
+            ) : (
+              <div className="flex min-h-44 items-center justify-center px-6 text-center">
+                <p className="text-sm font-semibold text-slate-400">
+                  No available users found.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <footer
+          className="
+            shrink-0
+            border-t
+            border-slate-200
+            bg-white
+            p-4
+            pb-[max(1rem,env(safe-area-inset-bottom))]
+            dark:border-slate-800
+            dark:bg-slate-950
+            sm:p-5
+          "
+        >
+          <button
+            type="button"
+            disabled={
+              selectedIds.length === 0 ||
+              addMutation.isPending
+            }
+            onClick={() =>
+              addMutation.mutate()
+            }
+            className="
+              min-h-12
+              w-full
+              rounded-xl
+              bg-elitePurple
+              px-4
+              py-3
+              text-sm
+              font-black
+              text-white
+              transition
+              hover:brightness-110
+              disabled:cursor-not-allowed
+              disabled:opacity-50
+            "
+          >
+            {addMutation.isPending
+              ? "Adding..."
+              : `Add ${selectedIds.length} member${
+                  selectedIds.length === 1
+                    ? ""
+                    : "s"
+                }`}
+          </button>
+        </footer>
       </div>
     </div>
   );
 };
 
-export default RoomChat;
+export default AddGroupMembersModal;

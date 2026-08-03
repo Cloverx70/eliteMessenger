@@ -55,6 +55,12 @@ export class MessageAttachment {
   @Column('uuid')
   messageId: string;
 
+  @Column({
+    type: 'text',
+    nullable: true,
+  })
+  blurDataURL: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

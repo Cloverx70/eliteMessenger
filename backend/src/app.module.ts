@@ -5,7 +5,9 @@ import { DatabaseModule } from './database/database.module';
 import { FriendsModule } from './features/friends/friends.module';
 import { MediaModule } from './features/media/media.module';
 import { Module } from '@nestjs/common';
+import { NotificationsModule } from './features/notifications/notifications.module';
 import { PostsModule } from './features/posts/posts.module';
+import { ProfileModule } from './features/profile/profile.module';
 import { S3Module } from './utils/s3/s3.module';
 
 @Module({
@@ -18,6 +20,8 @@ import { S3Module } from './utils/s3/s3.module';
     S3Module,
     MediaModule,
     PostsModule,
+    NotificationsModule,
+    ProfileModule,
   ],
   controllers: [],
   providers: [],

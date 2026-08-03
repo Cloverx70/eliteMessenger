@@ -27,9 +27,12 @@ import { useQuery } from "@tanstack/react-query";
 type MediaAttachment = IMessageAttachment | IGroupMessageAttachment;
 
 function formatBytes(size?: number | null) {
-  if (!size || size <= 0) return "Unknown size";
+  if (!size || size <= 0) {
+    return "Unknown size";
+  }
 
   const units = ["B", "KB", "MB", "GB"];
+
   const index = Math.min(
     Math.floor(Math.log(size) / Math.log(1024)),
     units.length - 1,
@@ -41,7 +44,9 @@ function formatBytes(size?: number | null) {
 }
 
 function getFileExtension(filename?: string | null) {
-  if (!filename?.includes(".")) return "";
+  if (!filename?.includes(".")) {
+    return "";
+  }
 
   return filename.split(".").pop()?.toLowerCase() ?? "";
 }
@@ -56,22 +61,40 @@ function getSenderName(attachment: MediaAttachment) {
 
 function MediaPreview({ attachment }: { attachment: MediaAttachment }) {
   const normalizedType = attachment.type?.toUpperCase();
+
   const extension = getFileExtension(attachment.filename);
 
   const isPdf =
-    normalizedType === "FILE" &&
+    (normalizedType === "FILE" || normalizedType === "DOCUMENT") &&
     (extension === "pdf" ||
       attachment.filename?.toLowerCase().endsWith(".pdf"));
 
+  const blurDataURL =
+    "blurDataURL" in attachment && typeof attachment.blurDataURL === "string"
+      ? attachment.blurDataURL
+      : undefined;
+
   if (normalizedType === "IMAGE") {
     return (
-      <div className="relative min-h-[360px] w-full overflow-hidden rounded-2xl bg-slate-100 sm:min-h-[460px] lg:min-h-[520px] dark:bg-slate-900">
+      <div
+        className="
+          relative
+          aspect-[4/3]
+          w-full
+          overflow-hidden
+          rounded-2xl
+          bg-slate-100
+          dark:bg-slate-900
+        "
+      >
         <Image
           src={attachment.url}
           alt={attachment.filename ?? "Shared image"}
           fill
           priority
-          sizes="(max-width: 768px) 100vw, 700px"
+          sizes="(max-width: 1280px) 100vw, 390px"
+          placeholder={blurDataURL ? "blur" : "empty"}
+          blurDataURL={blurDataURL}
           className="object-contain"
         />
       </div>
@@ -80,14 +103,14 @@ function MediaPreview({ attachment }: { attachment: MediaAttachment }) {
 
   if (normalizedType === "GIF") {
     return (
-      <div className="relative min-h-[360px] w-full overflow-hidden rounded-2xl bg-slate-100 sm:min-h-[460px] lg:min-h-[520px] dark:bg-slate-900">
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-900">
         <Image
           src={attachment.url}
           alt={attachment.filename ?? "Shared GIF"}
           fill
           priority
           unoptimized
-          sizes="(max-width: 768px) 100vw, 700px"
+          sizes="(max-width: 1280px) 100vw, 390px"
           className="object-contain"
         />
       </div>
@@ -96,13 +119,13 @@ function MediaPreview({ attachment }: { attachment: MediaAttachment }) {
 
   if (normalizedType === "VIDEO") {
     return (
-      <div className="flex min-h-[360px] w-full items-center justify-center overflow-hidden rounded-2xl bg-black sm:min-h-[460px] lg:min-h-[520px]">
+      <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-2xl bg-black">
         <video
           src={attachment.url}
           controls
           playsInline
           preload="metadata"
-          className="max-h-[70vh] w-full object-contain"
+          className="max-h-full w-full object-contain"
         >
           Your browser does not support video playback.
         </video>
@@ -112,27 +135,49 @@ function MediaPreview({ attachment }: { attachment: MediaAttachment }) {
 
   if (isPdf) {
     return (
-      <div className="min-h-[520px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+      <div className="h-[56dvh] min-h-[420px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
         <iframe
           src={attachment.url}
           title={attachment.filename ?? "PDF document"}
-          className="h-[65vh] min-h-[520px] w-full"
+          className="h-full w-full"
         />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-[420px] w-full flex-col items-center justify-center rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 via-white to-slate-50 px-8 text-center dark:border-slate-800 dark:from-violet-950/20 dark:via-slate-950 dark:to-slate-950">
-      <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-elitePurple/10 text-elitePurple">
-        <FileText size={42} />
-      </div>
+    <div
+      className="
+        flex
+        min-h-72
+        w-full
+        flex-col
+        items-center
+        justify-center
+        rounded-2xl
+        border
+        border-slate-200
+        bg-gradient-to-br
+        from-violet-50
+        via-white
+        to-slate-50
+        px-6
+        text-center
+        dark:border-slate-800
+        dark:from-violet-950/20
+        dark:via-slate-950
+        dark:to-slate-950
+      "
+    >
+      <span className="flex h-20 w-20 items-center justify-center rounded-3xl bg-elitePurple/10 text-elitePurple">
+        <FileText size={36} />
+      </span>
 
-      <h2 className="mt-6 max-w-md truncate text-lg font-bold text-slate-900 dark:text-white">
+      <h2 className="mt-5 max-w-full truncate text-base font-black text-slate-900 dark:text-white">
         {attachment.filename ?? "Shared file"}
       </h2>
 
-      <p className="mt-2 text-sm font-medium text-slate-500">
+      <p className="mt-2 text-xs font-semibold text-slate-500">
         {extension ? extension.toUpperCase() : "FILE"} ·{" "}
         {formatBytes(attachment.size)}
       </p>
@@ -141,7 +186,7 @@ function MediaPreview({ attachment }: { attachment: MediaAttachment }) {
         href={attachment.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="mt-6 inline-flex h-11 items-center gap-2 rounded-xl bg-elitePurple px-5 text-sm font-bold text-white transition hover:bg-elitePurpleHover"
+        className="mt-5 inline-flex h-11 items-center gap-2 rounded-xl bg-elitePurple px-5 text-sm font-black text-white transition hover:brightness-110"
       >
         <ExternalLink size={17} />
         Open file
@@ -152,10 +197,15 @@ function MediaPreview({ attachment }: { attachment: MediaAttachment }) {
 
 export default function MediaDynamicPage() {
   const router = useRouter();
-  const params = useParams<{ mid: string }>();
+
+  const params = useParams<{
+    mid: string;
+  }>();
+
   const searchParams = useSearchParams();
 
   const attachmentId = params.mid;
+
   const rawSource = searchParams.get("source");
 
   const source: MediaSources | null =
@@ -186,8 +236,8 @@ export default function MediaDynamicPage() {
 
   if (!source) {
     return (
-      <section className="flex min-h-full w-full items-center justify-center p-6">
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-6 py-5 text-sm font-semibold text-red-600 dark:border-red-950 dark:bg-red-950/20">
+      <section className="flex h-full min-h-0 w-full items-center justify-center p-5">
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-center text-sm font-semibold text-red-600 dark:border-red-950 dark:bg-red-950/20">
           Invalid or missing media source.
         </div>
       </section>
@@ -196,16 +246,11 @@ export default function MediaDynamicPage() {
 
   if (isLoading) {
     return (
-      <section className="w-full p-5">
-        <div className="mx-auto w-full max-w-5xl animate-pulse">
-          <div className="mb-5 flex items-center justify-between">
-            <div className="h-10 w-24 rounded-xl bg-slate-200 dark:bg-slate-800" />
-            <div className="h-10 w-10 rounded-xl bg-slate-200 dark:bg-slate-800" />
-          </div>
-
-          <div className="h-[520px] rounded-2xl bg-slate-200 dark:bg-slate-800" />
-
-          <div className="mt-5 h-24 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+      <section className="h-full min-h-0 w-full overflow-y-auto p-4">
+        <div className="animate-pulse">
+          <div className="mb-4 h-11 w-28 rounded-xl bg-slate-200 dark:bg-slate-800" />
+          <div className="aspect-[4/3] rounded-2xl bg-slate-200 dark:bg-slate-800" />
+          <div className="mt-4 h-24 rounded-2xl bg-slate-200 dark:bg-slate-800" />
         </div>
       </section>
     );
@@ -213,9 +258,9 @@ export default function MediaDynamicPage() {
 
   if (isError || !attachment) {
     return (
-      <section className="flex min-h-full w-full items-center justify-center p-6">
-        <div className="max-w-md rounded-2xl border border-red-200 bg-red-50 px-6 py-5 text-center dark:border-red-950 dark:bg-red-950/20">
-          <p className="font-bold text-red-600">Could not load this media</p>
+      <section className="flex h-full min-h-0 w-full items-center justify-center p-5">
+        <div className="max-w-sm rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-center dark:border-red-950 dark:bg-red-950/20">
+          <p className="font-black text-red-600">Could not load this media</p>
 
           <p className="mt-2 text-sm text-red-500">
             {error instanceof Error
@@ -228,6 +273,7 @@ export default function MediaDynamicPage() {
   }
 
   const sender = attachment.message.sender;
+
   const senderName = getSenderName(attachment);
 
   const conversationId =
@@ -241,208 +287,280 @@ export default function MediaDynamicPage() {
       : "Direct conversation";
 
   return (
-    <section className="min-h-full w-full bg-slate-50/40 p-4 sm:p-5 dark:bg-slate-950/20">
-      <div className="mx-auto w-full max-w-5xl">
-        {/* Header */}
-        <header className="mb-5 flex items-center justify-between">
+    <section
+      className="
+        h-full
+        min-h-0
+        w-full
+        overflow-y-auto
+        overflow-x-hidden
+        overscroll-contain
+        bg-white
+        px-3
+        py-4
+        pb-[max(1rem,env(safe-area-inset-bottom))]
+        dark:bg-customBlack
+        sm:px-5
+      "
+    >
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => router.push("/media")}
+          className="
+            flex
+            h-11
+            items-center
+            gap-2
+            rounded-xl
+            px-3
+            text-sm
+            font-black
+            text-slate-600
+            transition
+            hover:bg-slate-100
+            hover:text-elitePurple
+            dark:text-slate-300
+            dark:hover:bg-slate-900
+          "
+        >
+          <ArrowLeft size={19} />
+          Back
+        </button>
+
+        <button
+          type="button"
+          aria-label="Close media preview"
+          onClick={() => router.push("/media")}
+          className="
+            flex
+            h-11
+            w-11
+            items-center
+            justify-center
+            rounded-full
+            border
+            border-slate-200
+            bg-white
+            text-slate-600
+            transition
+            hover:border-elitePurple
+            hover:bg-elitePurple
+            hover:text-white
+            dark:border-slate-800
+            dark:bg-slate-950
+            dark:text-slate-300
+          "
+        >
+          <X size={19} />
+        </button>
+      </header>
+
+      <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+        <MediaPreview attachment={attachment} />
+
+        <div className="mt-4 flex min-w-0 items-center gap-3">
+          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-elitePurple/10">
+            {sender.userPfpUrl ? (
+              <Image
+                src={sender.userPfpUrl}
+                alt={senderName}
+                fill
+                sizes="44px"
+                className="object-cover"
+              />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center text-sm font-black text-elitePurple">
+                {sender.firstname?.charAt(0).toUpperCase() ??
+                  sender.username.charAt(0).toUpperCase()}
+              </span>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-black text-slate-900 dark:text-white">
+              {senderName}
+            </p>
+
+            <p className="mt-1 truncate text-[11px] font-semibold text-slate-500">
+              @{sender.username}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="
+              flex
+              min-h-11
+              items-center
+              justify-center
+              gap-2
+              rounded-xl
+              border
+              border-slate-200
+              px-3
+              text-xs
+              font-black
+              text-slate-600
+              transition
+              hover:border-elitePurple
+              hover:text-elitePurple
+              dark:border-slate-800
+              dark:text-slate-300
+            "
+          >
+            <ExternalLink size={15} />
+            Open
+          </a>
+
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="
+              flex
+              min-h-11
+              items-center
+              justify-center
+              gap-2
+              rounded-xl
+              bg-elitePurple
+              px-3
+              text-xs
+              font-black
+              text-white
+              transition
+              hover:brightness-110
+            "
+          >
+            <Download size={15} />
+            Download
+          </a>
+        </div>
+
+        <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <MetadataRow
+            icon={
+              attachment.type === "VIDEO"
+                ? Video
+                : attachment.type === "IMAGE"
+                  ? ImageIcon
+                  : FileText
+            }
+            label="Media type"
+            value={attachment.type}
+          />
+
+          <MetadataRow
+            icon={HardDrive}
+            label="File size"
+            value={formatBytes(attachment.size)}
+          />
+
+          <MetadataRow
+            icon={CalendarDays}
+            label="Shared date"
+            value={new Date(attachment.createdAt).toLocaleDateString(
+              undefined,
+              {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              },
+            )}
+          />
+        </div>
+
+        <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <h2 className="text-sm font-black text-slate-900 dark:text-white">
+            Shared in
+          </h2>
+
           <button
             type="button"
-            onClick={() => router.push("/media")}
-            className="group flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-elitePurple hover:shadow-sm dark:text-slate-300 dark:hover:bg-slate-900"
+            onClick={() => {
+              if (source === MediaSources.GROUPCHATS) {
+                router.push(`/groups/${conversationId}`);
+              } else {
+                router.push(`/chats/${conversationId}`);
+              }
+            }}
+            className="
+              mt-3
+              flex
+              w-full
+              min-w-0
+              items-center
+              justify-between
+              gap-3
+              rounded-2xl
+              border
+              border-slate-200
+              p-3
+              text-left
+              transition
+              hover:border-elitePurple
+              hover:bg-elitePurple/5
+              dark:border-slate-800
+            "
           >
-            <ArrowLeft
-              size={19}
-              className="transition-transform group-hover:-translate-x-0.5"
-            />
-            Back
-          </button>
-
-          <button
-            type="button"
-            aria-label="Close media preview"
-            onClick={() => router.push("/media")}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-elitePurple hover:bg-elitePurple hover:text-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
-          >
-            <X size={19} />
-          </button>
-        </header>
-
-        {/* Main card */}
-        <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4 dark:border-slate-800 dark:bg-slate-950">
-          <MediaPreview attachment={attachment} />
-
-          {/* Sender information */}
-          <div className="mt-5 flex flex-col gap-4 px-1 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-elitePurple/10">
-                {sender.userPfpUrl ? (
-                  <Image
-                    src={sender.userPfpUrl}
-                    alt={senderName}
-                    fill
-                    sizes="48px"
-                    className="object-cover"
-                  />
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-elitePurple text-white">
+                {source === MediaSources.GROUPCHATS ? (
+                  <Users size={18} />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-sm font-black text-elitePurple">
-                    {sender.firstname?.charAt(0).toUpperCase() ??
-                      sender.username.charAt(0).toUpperCase()}
-                  </div>
+                  <MessageCircle size={18} />
                 )}
-              </div>
+              </span>
 
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                  {senderName}
-                </p>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-black text-slate-800 dark:text-slate-100">
+                  {conversationLabel}
+                </span>
 
-                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-medium text-slate-500">
-                  <span>@{sender.username}</span>
+                <span className="mt-0.5 block truncate text-[10px] text-slate-400">
+                  {conversationId}
+                </span>
+              </span>
+            </span>
 
-                  <span className="h-1 w-1 rounded-full bg-slate-300" />
-
-                  <span>
-                    {new Date(attachment.createdAt).toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <a
-                href={attachment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-600 transition hover:border-elitePurple hover:bg-elitePurple hover:text-white dark:border-slate-800 dark:text-slate-300"
-              >
-                <ExternalLink size={15} />
-                Open
-              </a>
-
-              <a
-                href={attachment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex h-10 items-center gap-2 rounded-xl bg-elitePurple px-4 text-xs font-bold text-white transition hover:bg-elitePurpleHover"
-              >
-                <Download size={15} />
-                Download
-              </a>
-            </div>
-          </div>
-
-          {/* Metadata */}
-          <div className="mt-5 grid grid-cols-1 gap-3 border-t border-slate-100 px-1 pt-5 sm:grid-cols-3 dark:border-slate-800">
-            <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-900">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-elitePurple/10 text-elitePurple">
-                {attachment.type === "VIDEO" ? (
-                  <Video size={19} />
-                ) : attachment.type === "IMAGE" ? (
-                  <ImageIcon size={19} />
-                ) : (
-                  <FileText size={19} />
-                )}
-              </div>
-
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  Media type
-                </p>
-
-                <p className="truncate text-xs font-bold text-slate-700 dark:text-slate-200">
-                  {attachment.type}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-900">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-elitePurple/10 text-elitePurple">
-                <HardDrive size={19} />
-              </div>
-
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  File size
-                </p>
-
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                  {formatBytes(attachment.size)}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-900">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-elitePurple/10 text-elitePurple">
-                <CalendarDays size={19} />
-              </div>
-
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  Shared date
-                </p>
-
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                  {new Date(attachment.createdAt).toLocaleDateString(
-                    undefined,
-                    {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    },
-                  )}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Shared in */}
-          <div className="mt-5 border-t border-slate-100 px-1 pt-5 dark:border-slate-800">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              Shared in
-            </h2>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (source === MediaSources.GROUPCHATS) {
-                  router.push(`/groups/${conversationId}`);
-                } else {
-                  router.push(`/chats/${conversationId}`);
-                }
-              }}
-              className="mt-3 flex w-full items-center justify-between rounded-2xl border border-slate-200 p-3 text-left transition hover:border-elitePurple hover:bg-elitePurple/5 dark:border-slate-800"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-elitePurple text-white">
-                  {source === MediaSources.GROUPCHATS ? (
-                    <Users size={19} />
-                  ) : (
-                    <MessageCircle size={19} />
-                  )}
-                </div>
-
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                    {conversationLabel}
-                  </p>
-
-                  <p className="mt-0.5 truncate text-xs text-slate-400">
-                    {conversationId}
-                  </p>
-                </div>
-              </div>
-
-              <ExternalLink size={17} className="shrink-0 text-slate-400" />
-            </button>
-          </div>
-        </article>
-      </div>
+            <ExternalLink size={16} className="shrink-0 text-slate-400" />
+          </button>
+        </div>
+      </article>
     </section>
+  );
+}
+
+interface MetadataRowProps {
+  icon: React.ComponentType<{
+    size?: number;
+    className?: string;
+  }>;
+  label: string;
+  value: string;
+}
+
+function MetadataRow({ icon: Icon, label, value }: MetadataRowProps) {
+  return (
+    <div className="flex min-w-0 items-center gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-900">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-elitePurple/10 text-elitePurple">
+        <Icon size={18} />
+      </span>
+
+      <span className="min-w-0">
+        <span className="block text-[10px] font-black uppercase tracking-wide text-slate-400">
+          {label}
+        </span>
+
+        <span className="mt-0.5 block truncate text-xs font-black text-slate-700 dark:text-slate-200">
+          {value}
+        </span>
+      </span>
+    </div>
   );
 }

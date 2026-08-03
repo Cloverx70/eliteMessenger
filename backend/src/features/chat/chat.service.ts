@@ -264,11 +264,13 @@ export class ChatService {
         message: text,
         status: 'sent',
         sharedPostId: messageDto.sharedPostId ?? null,
-        attachments: attachments.map((attachment) => ({
-          key: attachment.key,
-          type: attachment.type,
-          size: attachment.size,
-        })),
+        attachments: attachments.map((attachment) => {
+          return {
+            key: attachment.key,
+            type: attachment.type,
+            size: attachment.size,
+          };
+        }),
       });
 
       const savedMessage = await this.messageRepo.save(newMessage);

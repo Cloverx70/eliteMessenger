@@ -26,6 +26,12 @@ import { User } from '../../database/entities/user.entity';
 import { handleError } from '../../utils/handleError.util';
 import { isValidUrl } from '../../utils/isValidURL';
 import { S3Service } from '../../utils/s3/s3.service';
+import {
+  CreateNotificationCauseInput,
+  NotificationCause,
+  NotificationsService,
+} from '../notifications/notifications.service';
+import { group } from 'console';
 
 export type GroupMessageStatus = 'sent' | 'delivered' | 'seen';
 
@@ -51,6 +57,7 @@ export class GroupChatService {
     private readonly userRepo: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly s3Service: S3Service,
+    private readonly notificationService: NotificationsService,
   ) {}
 
   private safeUser(user?: User | null) {
@@ -288,6 +295,18 @@ export class GroupChatService {
         await manager.save(GroupMember, memberships);
         return savedGroup;
       });
+
+      for (const memberId of uniqueMemberIds) {
+        const groupAddedNotification: CreateNotificationCauseInput = {
+          cause: NotificationCause.GROUP_ADDED,
+          actorId: creatorId,
+          recipientId: memberId,
+          groupId: group.id,
+          groupName: group.name,
+        };
+
+        await this.notificationService.createFromCause(groupAddedNotification);
+      }
 
       return {
         message: 'Group created successfully',
@@ -697,6 +716,18 @@ export class GroupChatService {
 
       await this.memberRepo.remove(target);
 
+      const groupRoleUpdatedNotification: CreateNotificationCauseInput = {
+        cause: NotificationCause.GROUP_REMOVED,
+        actorId: actorId,
+        recipientId: memberUserId,
+        groupId: groupId,
+        groupName: group.name,
+      };
+
+      await this.notificationService.createFromCause(
+        groupRoleUpdatedNotification,
+      );
+
       return { message: 'Member removed successfully', code: 200 };
     } catch (error: any) {
       handleError(error);
@@ -728,6 +759,22 @@ export class GroupChatService {
             code: 200,
           };
         }
+
+        const group = await this.groupRepo.findOne({ where: { id: groupId } });
+
+        const groupRoleUpdatedNotification: CreateNotificationCauseInput = {
+          cause: NotificationCause.GROUP_ROLE_UPDATED,
+          actorId: actorId,
+          recipientId: memberUserId,
+          groupId: groupId,
+          groupName: group.name,
+          previousRole: target.role,
+          newRole: dto.role,
+        };
+
+        await this.notificationService.createFromCause(
+          groupRoleUpdatedNotification,
+        );
 
         await this.dataSource.transaction(async (manager) => {
           actor.role = GroupMemberRole.ADMIN;

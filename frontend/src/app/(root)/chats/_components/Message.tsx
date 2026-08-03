@@ -1,11 +1,12 @@
 "use client";
 
 import { AttachmentType, ITempMessage } from "../action";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { FaRegClock } from "react-icons/fa";
 import { IoCheckmarkDone } from "react-icons/io5";
 import { IoCheckmarkOutline } from "react-icons/io5";
+import { SharedPostMessageCard } from "./shared-post-message-card";
 import get12hrTiming from "@/app/constants";
 
 interface MessageProps {
@@ -23,146 +24,210 @@ const Message = ({ message, isSender, isLast }: MessageProps) => {
     if (isLast) {
       messagesEndRef.current?.scrollIntoView({
         behavior: "smooth",
+        block: "end",
       });
     }
   }, [isLast]);
+
+  const hasAttachments = Boolean(message.attachments?.length);
+
+  /*
+   * Use sharedPost too because optimistic messages may contain
+   * the post before sharedPostId is returned by the server.
+   */
+  const hasSharedPost = Boolean(message.sharedPostId || message.sharedPost);
+
+  const normalizedMessage = message.message?.trim() ?? "";
+
+  /*
+   * Your backend currently saves "Shared a post" as a fallback
+   * message. Hide it when the actual post card is displayed.
+   *
+   * Real text written alongside a shared post will still show.
+   */
+  const isAutomaticSharedPostText =
+    hasSharedPost && normalizedMessage.toLowerCase() === "shared a post";
+
+  const shouldShowText =
+    normalizedMessage.length > 0 && !isAutomaticSharedPostText;
+
+  const hasNormalBubble = hasAttachments || shouldShowText;
 
   return (
     <>
       <div
         ref={messagesEndRef}
-        className={`w-full flex items-center ${
-          isSender ? "justify-end" : "justify-start"
-        }`}
+        className={`flex w-full ${isSender ? "justify-end" : "justify-start"}`}
       >
         <div
-          className={`
-          max-w-[70%]
-          px-3 py-2
-          flex flex-col gap-2
-          rounded-xl
-          ${isSender ? "bg-elitePurple text-white" : "bg-[#f4f5f7] text-black"}
-          `}
+          className={`flex max-w-[85%] flex-col gap-1 sm:max-w-[75%] lg:max-w-[70%] ${
+            isSender ? "items-end" : "items-start"
+          }`}
         >
-          {/* Attachments */}
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {message.attachments.map((attachment) => (
-                <div key={attachment.id}>
-                  {/* IMAGE */}
-                  {attachment.type === AttachmentType.IMAGE &&
-                    attachment.url && (
-                      <img
-                        src={attachment.url}
-                        alt={attachment.key}
-                        className="
-                          max-w-[260px]
-                          rounded-xl
-                          cursor-pointer
-                          hover:opacity-80
-                          transition
-                          "
-                        onClick={() => setSelectedImage(attachment.url!)}
-                      />
-                    )}
+          {/* Normal message bubble */}
+          {hasNormalBubble ? (
+            <div
+              className={`
+                flex max-w-full flex-col gap-2
+                rounded-xl px-3 py-2
+                ${
+                  isSender
+                    ? "bg-elitePurple text-white"
+                    : "bg-[#f4f5f7] text-black dark:bg-slate-800 dark:text-white"
+                }
+              `}
+            >
+              {/* Attachments */}
+              {hasAttachments ? (
+                <div className="flex flex-col gap-2">
+                  {message.attachments?.map((attachment) => (
+                    <div key={attachment.id}>
+                      {/* Image */}
+                      {attachment.type === AttachmentType.IMAGE &&
+                      attachment.url ? (
+                        <img
+                          src={attachment.url}
+                          alt={attachment.key ?? "Message attachment"}
+                          className="
+                              max-h-[350px]
+                              w-auto
+                              max-w-full
+                              cursor-pointer
+                              rounded-xl
+                              object-cover
+                              transition
+                              hover:opacity-90
+                              sm:max-w-[260px]
+                            "
+                          onClick={() => setSelectedImage(attachment.url!)}
+                        />
+                      ) : null}
 
-                  {/* VIDEO */}
-                  {attachment.type === AttachmentType.VIDEO &&
-                    attachment.url && (
-                      <video
-                        src={attachment.url}
-                        controls
-                        className="
-                          max-w-[300px]
-                          rounded-xl
-                          "
-                      />
-                    )}
+                      {/* Video */}
+                      {attachment.type === AttachmentType.VIDEO &&
+                      attachment.url ? (
+                        <video
+                          src={attachment.url}
+                          controls
+                          preload="metadata"
+                          className="
+                              max-h-[350px]
+                              w-full
+                              max-w-[300px]
+                              rounded-xl
+                            "
+                        />
+                      ) : null}
 
-                  {/* DOCUMENT / FILE */}
-                  {(attachment.type === AttachmentType.DOCUMENT ||
-                    attachment.type === AttachmentType.FILE) &&
-                    attachment.url && (
-                      <a
-                        href={attachment.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="
-                          flex
-                          items-center
-                          gap-2
-                          bg-black/10
-                          px-3
-                          py-2
-                          rounded-lg
-                          text-sm
-                          hover:bg-black/20
-                          transition
-                          "
-                      >
-                        <span>📄</span>
+                      {/* Document or file */}
+                      {(attachment.type === AttachmentType.DOCUMENT ||
+                        attachment.type === AttachmentType.FILE) &&
+                      attachment.url ? (
+                        <a
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="
+                              flex
+                              max-w-[260px]
+                              items-center
+                              gap-2
+                              rounded-lg
+                              bg-black/10
+                              px-3
+                              py-2
+                              text-sm
+                              transition
+                              hover:bg-black/20
+                            "
+                        >
+                          <span>📄</span>
 
-                        <span className="truncate max-w-[180px]">
-                          {attachment.key}
-                        </span>
-                      </a>
-                    )}
+                          <span className="max-w-[180px] truncate">
+                            {attachment.key ?? "Attachment"}
+                          </span>
+                        </a>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : null}
+
+              {/* Normal message text */}
+              {shouldShowText ? (
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {normalizedMessage}
+                </p>
+              ) : null}
             </div>
-          )}
+          ) : null}
 
-          {/* Text */}
-          {message.message && (
-            <p className="text-sm break-words">{message.message}</p>
-          )}
+          {/* Shared post */}
+          {hasSharedPost ? (
+            <SharedPostMessageCard post={message.sharedPost ?? null} />
+          ) : null}
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-1">
+          {/* Time and status */}
+          <div
+            className={`flex items-center gap-1 px-1 text-slate-400 ${
+              isSender ? "justify-end" : "justify-start"
+            }`}
+          >
             <p className="text-[9px]">
               {get12hrTiming(new Date(message.createdAt))}
             </p>
 
-            {isSender &&
-              (message.status === "pending" ? (
-                <FaRegClock size={12} />
+            {isSender ? (
+              message.status === "pending" ? (
+                <FaRegClock size={11} />
               ) : message.status === "sent" ? (
-                <IoCheckmarkOutline size={14} />
+                <IoCheckmarkOutline size={13} />
               ) : message.status === "delivered" ? (
-                <IoCheckmarkDone size={14} />
+                <IoCheckmarkDone size={13} />
               ) : (
-                <IoCheckmarkDone size={14} color="#6D28D9" />
-              ))}
+                <IoCheckmarkDone size={13} className="text-elitePurple" />
+              )
+            ) : null}
           </div>
         </div>
       </div>
 
-      {/* Image Viewer */}
-      {selectedImage && (
+      {/* Image viewer */}
+      {selectedImage ? (
         <div
+          role="button"
+          tabIndex={0}
           className="
-          fixed
-          inset-0
-          z-50
-          bg-black/80
-          flex
-          items-center
-          justify-center
-          cursor-pointer
+            fixed
+            inset-0
+            z-50
+            flex
+            cursor-pointer
+            items-center
+            justify-center
+            bg-black/80
+            p-4
           "
           onClick={() => setSelectedImage(null)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" || event.key === "Enter") {
+              setSelectedImage(null);
+            }
+          }}
         >
           <img
             src={selectedImage}
-            alt="preview"
+            alt="Attachment preview"
             className="
-            max-h-[90vh]
-            max-w-[90vw]
-            rounded-xl
+              max-h-[90vh]
+              max-w-[90vw]
+              rounded-xl
+              object-contain
             "
+            onClick={(event) => event.stopPropagation()}
           />
         </div>
-      )}
+      ) : null}
     </>
   );
 };

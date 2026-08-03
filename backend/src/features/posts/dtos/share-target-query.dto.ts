@@ -3,9 +3,7 @@ import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class ShareTargetQueryDto {
   @IsOptional()
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(80)
   search?: string;

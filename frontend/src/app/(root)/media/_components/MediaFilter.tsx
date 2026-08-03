@@ -1,16 +1,35 @@
 "use client";
 
-import { MediaFilterPills } from "@/app/constants";
 import Pill from "@/app/components/pill";
+import { MediaFilterPills } from "@/app/constants";
 
 const MediaFilter = () => {
   return (
-    <div className=" flex gap-3 items-center justify-start">
-      {MediaFilterPills.map((pill) => (
-        <div key={pill.label}>
-          <Pill text={pill.label} isDefault={pill.default} />
-        </div>
-      ))}
+    <div
+      className="
+        flex
+        w-full
+        items-center
+        gap-2
+        overflow-x-auto
+        pb-1
+        [scrollbar-width:none]
+        [&::-webkit-scrollbar]:hidden
+      "
+    >
+      {MediaFilterPills.map(
+        (pill) => (
+          <div
+            key={pill.label}
+            className="shrink-0"
+          >
+            <Pill
+              text={pill.label}
+              isDefault={pill.default}
+            />
+          </div>
+        ),
+      )}
     </div>
   );
 };

@@ -21,6 +21,10 @@ class MessageAttachmentDto {
 
   @IsOptional()
   size?: number;
+
+  @IsOptional()
+  @IsString()
+  blurDataURL?: string | null;
 }
 
 export default class MessageDto {

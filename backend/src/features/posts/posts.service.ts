@@ -49,6 +49,11 @@ import {
   getImageMetadata,
   getVideoMetadata,
 } from './helpers/media-metadata.helper';
+import {
+  CreateNotificationCauseInput,
+  NotificationCause,
+  NotificationsService,
+} from '../notifications/notifications.service';
 
 interface ProcessedAttachment {
   key: string;
@@ -94,6 +99,7 @@ export class PostsService {
     private readonly groupChatRepo: Repository<GroupChat>,
     private readonly dataSource: DataSource,
     private readonly s3Service: S3Service,
+    private readonly notificationService: NotificationsService,
   ) {}
 
   async createPost(
@@ -461,6 +467,16 @@ export class PostsService {
         await postRepo.save(lockedPost);
       }
 
+      const postLikedNotification: CreateNotificationCauseInput = {
+        cause: NotificationCause.POST_LIKED,
+        actorId: userId,
+        recipientId: lockedPost.authorId,
+        postId: postId,
+        postPreview: lockedPost.caption,
+      };
+
+      await this.notificationService.createFromCause(postLikedNotification);
+
       return { liked, likeCount: lockedPost.likeCount };
     });
   }
@@ -578,8 +594,20 @@ export class PostsService {
       );
 
       await postRepo.increment({ id: postId }, 'commentCount', 1);
+
       return comment.id;
     });
+
+    const postCommentedNotification: CreateNotificationCauseInput = {
+      cause: NotificationCause.POST_COMMENTED,
+      actorId: userId,
+      recipientId: post.authorId,
+      postId: postId,
+      commentId: commentId,
+      commentContent: dto.content,
+    };
+
+    await this.notificationService.createFromCause(postCommentedNotification);
 
     return this.commentRepo
       .createQueryBuilder('comment')
@@ -723,6 +751,22 @@ export class PostsService {
       );
 
       await postRepo.increment({ id: postId }, 'shareCount', 1);
+
+      const postSharedNotification: CreateNotificationCauseInput = {
+        cause: NotificationCause.POST_SHARED,
+
+        // User who shared the post
+        actorId: userId,
+
+        // Owner of the post
+        recipientId: post.authorId,
+
+        postId: postId,
+
+        postPreview: post.caption,
+      };
+
+      await this.notificationService.createFromCause(postSharedNotification);
 
       return {
         message: 'Post shared successfully.',
