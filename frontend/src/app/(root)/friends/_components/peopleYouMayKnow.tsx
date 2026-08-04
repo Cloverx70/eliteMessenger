@@ -9,6 +9,7 @@ import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import Image from "next/image";
+import Link from "next/link";
 import Loader from "@/app/components/loader";
 import Spinner from "@/app/components/spinner";
 import toaster from "@/app/components/toaster";
@@ -20,7 +21,6 @@ interface IPeopleYouMayKnowProps {
 
 const PeopleYouMayKnow = ({ query }: IPeopleYouMayKnowProps) => {
   const client = useQueryClient();
-
   const debouncedValue = useDebounce(query, 300);
 
   const [PendingId, setPendingId] = useState<string | undefined>();
@@ -93,9 +93,10 @@ const PeopleYouMayKnow = ({ query }: IPeopleYouMayKnowProps) => {
         }`.toUpperCase();
 
         return (
-          <div
+          <Link
+            href={`/profile/${pymn.username}`}
             key={pymn.id ?? _index}
-            className=" w-full h-24 border-t flex items-center justify-between py-2 px-10 "
+            className=" w-full h-24 border-t flex items-center justify-between py-2 px-10  hover:bg-elitePurpleHover/10 transition-all duration-100 ease-linear rounded-2xl cursor-pointer"
           >
             <div className=" flex gap-4">
               <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 ring-[2.5px] ring-elitePurple dark:bg-neutral-700">
@@ -122,7 +123,11 @@ const PeopleYouMayKnow = ({ query }: IPeopleYouMayKnowProps) => {
             </div>
             {!sentRequests.has(pymn.id) ? (
               <button
-                onClick={() => handleOnClickAdd(pymn.id)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleOnClickAdd(pymn.id);
+                }}
                 disabled={pymn.id === PendingId && sendRequestPending}
                 className=" text-xs py-2 px-10 disabled:bg-elitePurplePressed active:bg-elitePurplePressed font-bold text-white rounded-sm bg-elitePurple"
               >
@@ -134,7 +139,11 @@ const PeopleYouMayKnow = ({ query }: IPeopleYouMayKnowProps) => {
               </button>
             ) : (
               <button
-                onClick={() => handleOnClickCancel(pymn.id)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleOnClickCancel(pymn.id);
+                }}
                 disabled={pymn.id === PendingId && cancelRequestPending}
                 className=" text-xs py-2 px-10 disabled:bg-neutral-600 active:bg-neutral-600 font-bold text-white rounded-sm bg-neutral-500"
               >
@@ -145,7 +154,7 @@ const PeopleYouMayKnow = ({ query }: IPeopleYouMayKnowProps) => {
                 )}
               </button>
             )}
-          </div>
+          </Link>
         );
       })}
     </div>

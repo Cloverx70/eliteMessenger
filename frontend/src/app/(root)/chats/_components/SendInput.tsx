@@ -7,38 +7,26 @@ import {
   ITempMessage,
   UploadMessageAttachments,
 } from "../action";
-import {
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import EmojiPicker from "emoji-picker-react";
-import {
-  useRef,
-  useState,
-} from "react";
-import { BsEmojiSmile } from "react-icons/bs";
-import { FaPaperclip } from "react-icons/fa6";
-import { IoIosSend } from "react-icons/io";
-import { v4 as uuidv4 } from "uuid";
-
-import { IUser } from "@/app/auth/actions";
-import { useSocket } from "@/app/hooks/useSocket";
+import React, { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import AttachmentBar from "./AttachmentBar";
 import AttachmentPreview from "./AttachmentPreview";
+import { BsEmojiSmile } from "react-icons/bs";
+import EmojiPicker from "emoji-picker-react";
+import { FaPaperclip } from "react-icons/fa6";
+import { IUser } from "@/app/auth/actions";
+import { IoIosSend } from "react-icons/io";
+import { useSocketContext } from "@/app/providers/SocketProvider";
+import { v4 as uuidv4 } from "uuid";
 
 type SendInputProps = {
   user: IUser;
   rid: string | undefined;
   crid: string;
-  setMessages: React.Dispatch<
-    React.SetStateAction<
-      ITempMessage[]
-    >
-  >;
+  setMessages: React.Dispatch<React.SetStateAction<ITempMessage[]>>;
   chatroom: IChatRoom;
 };
-
 const SendInput = ({
   user,
   rid,
@@ -47,407 +35,144 @@ const SendInput = ({
   chatroom,
 }: SendInputProps) => {
   const client = useQueryClient();
-  const textareaRef =
-    useRef<HTMLTextAreaElement | null>(
-      null,
-    );
 
-  const [value, setValue] =
-    useState("");
-  const [
-    attachments,
-    setAttachments,
-  ] = useState<File[]>([]);
-  const [
-    attachmentBarActive,
-    setAttachmentBarActive,
-  ] = useState(false);
-  const [
-    emojiOpen,
-    setEmojiOpen,
-  ] = useState(false);
-  const [isSending, setIsSending] =
-    useState(false);
+  const [value, setValue] = useState<string>("");
+  const [attachments, setAttachments] = useState<File[]>([]);
 
-  const { sendMessage } = useSocket(
-    user.id,
-  );
+  const [attachmentBarActive, setattachmentBarActive] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
 
-  const {
-    mutateAsync:
-      uploadMessageAttachments,
-  } = useMutation({
-    mutationFn: (
-      data: FormData,
-    ) =>
-      UploadMessageAttachments(data),
-    mutationKey: [
-      "UPLOADMESSAGEATTACHMENTS",
-    ],
+  const { sendMessage } = useSocketContext();
+
+  const { mutateAsync: uploadMessageAttachmentsMutationAsync } = useMutation({
+    mutationFn: (data: FormData) => UploadMessageAttachments(data),
+    mutationKey: ["UPLOADMESSAGEATTACHMENTS"],
   });
 
-  const canSend =
-    Boolean(value.trim()) ||
-    attachments.length > 0;
+  const handleSendMessage = async (text: string) => {
+    if (text === "" && attachments.length === 0) return;
 
-  const resizeTextarea = () => {
-    const textarea =
-      textareaRef.current;
+    const tempAttachments = attachments.map((file) => ({
+      id: uuidv4(),
+      url: URL.createObjectURL(file),
+      type: getFileType(file),
+    }));
 
-    if (!textarea) return;
+    const newMessage: ITempMessage = {
+      id: uuidv4(),
 
-    textarea.style.height =
-      "auto";
+      message: text.trim(),
 
-    textarea.style.height = `${Math.min(
-      textarea.scrollHeight,
-      128,
-    )}px`;
-  };
+      chatRoom: chatroom,
+      chatroomId: crid,
 
-  const handleSendMessage =
-    async () => {
-      const text = value.trim();
+      sender: user,
+      sid: user.id,
 
-      if (
-        !rid ||
-        isSending ||
-        (!text &&
-          attachments.length === 0)
-      ) {
-        return;
-      }
+      createdAt: new Date(),
+      updatedAt: new Date(),
 
-      setIsSending(true);
+      status: "pending",
 
-      try {
-        let uploadedAttachments:
-          | IAttachment[]
-          | undefined = [];
+      attachments: tempAttachments,
 
-        if (
-          attachments.length > 0
-        ) {
-          const formData =
-            new FormData();
+      sharedPostId: null,
+      sharedPost: null,
 
-          attachments.forEach(
-            (file) => {
-              formData.append(
-                "files",
-                file,
-              );
-            },
-          );
-
-          uploadedAttachments =
-            await uploadMessageAttachments(
-              formData,
-            );
-        }
-
-        const tempAttachments =
-          attachments.map((file) => ({
-            id: uuidv4(),
-            url: URL.createObjectURL(
-              file,
-            ),
-            type: getFileType(file),
-          }));
-
-        const tempId = uuidv4();
-
-        const newMessage: ITempMessage =
-          {
-            id: tempId,
-            message: text,
-            chatRoom: chatroom,
-            chatroomId: crid,
-            sender: user,
-            sid: user.id,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            status:
-              "pending" as const,
-            attachments:
-              tempAttachments,
-            deletedAt: null,
-          };
-
-        setMessages((previous) => [
-          ...previous,
-          newMessage,
-        ]);
-
-        sendMessage(
-          user.id,
-          rid,
-          text,
-          crid,
-          tempId,
-          uploadedAttachments,
-        );
-
-        setValue("");
-        setAttachments([]);
-        setAttachmentBarActive(
-          false,
-        );
-        setEmojiOpen(false);
-
-        if (
-          textareaRef.current
-        ) {
-          textareaRef.current.style.height =
-            "44px";
-        }
-
-        client.invalidateQueries({
-          queryKey: ["CHATROOMS"],
-        });
-      } finally {
-        setIsSending(false);
-      }
+      deletedAt: null,
     };
 
+    setMessages((prev) => [
+      ...prev,
+      {
+        ...newMessage,
+      },
+    ]);
+
+    setattachmentBarActive(false);
+    setAttachments([]);
+
+    let uploadedAttachments: IAttachment[] | undefined = [];
+
+    if (attachments.length > 0) {
+      const formdata = new FormData();
+
+      attachments.forEach((file) => {
+        formdata.append("files", file);
+      });
+      uploadedAttachments =
+        await uploadMessageAttachmentsMutationAsync(formdata);
+    }
+
+    sendMessage(user.id, rid!, text, crid, newMessage.id, uploadedAttachments);
+
+    setValue("");
+    client.invalidateQueries({ queryKey: ["CHATROOMS"] });
+  };
   return (
-    <div className="relative flex w-full min-w-0 flex-col gap-2">
-      {attachments.length > 0 ? (
-        <div
-          className="
-            max-w-full
-            overflow-x-auto
-            pb-1
-          "
-        >
-          <AttachmentPreview
-            files={attachments}
-            removeFile={(index) =>
-              setAttachments(
-                (previous) =>
-                  previous.filter(
-                    (_, itemIndex) =>
-                      itemIndex !==
-                      index,
-                  ),
-              )
-            }
+    <div className="relative w-full h-12 border rounded-2xl  flex items-center justify-center py-7 px-3">
+      <div className="w-full flex justify-start items-center gap-3">
+        <div className="relative flex items-center">
+          <FaPaperclip
+            size={18}
+            className="text-slate-500 cursor-pointer hover:text-elitePurple transition"
+            onClick={() => setattachmentBarActive((prev) => !prev)}
           />
-        </div>
-      ) : null}
 
-      <div
-        className="
-          flex
-          min-w-0
-          items-end
-          gap-1.5
-          rounded-2xl
-          border
-          border-slate-200
-          bg-white
-          p-1.5
-          shadow-sm
-          dark:border-slate-700
-          dark:bg-slate-900
-          sm:gap-2
-          sm:p-2
-        "
-      >
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            aria-label="Add attachment"
-            onClick={() => {
-              setAttachmentBarActive(
-                (previous) =>
-                  !previous,
-              );
-              setEmojiOpen(false);
-            }}
-            className="
-              flex
-              h-11
-              w-11
-              items-center
-              justify-center
-              rounded-full
-              text-slate-500
-              transition
-              hover:bg-slate-100
-              hover:text-elitePurple
-              dark:hover:bg-slate-800
-            "
-          >
-            <FaPaperclip size={18} />
-          </button>
-
-          {attachmentBarActive ? (
-            <div
-              className="
-                absolute
-                bottom-14
-                left-0
-                z-50
-                max-w-[calc(100vw-1rem)]
-              "
-            >
+          {attachmentBarActive && (
+            <div className="absolute bottom-10 left-0 z-50">
               <AttachmentBar
-                setAttachments={
-                  setAttachments
-                }
-                setattachmentBarActive={
-                  setAttachmentBarActive
-                }
+                setAttachments={setAttachments}
+                setattachmentBarActive={setattachmentBarActive}
               />
             </div>
-          ) : null}
+          )}
         </div>
-
-        <textarea
-          ref={textareaRef}
-          rows={1}
+        <AttachmentPreview
+          files={attachments}
+          removeFile={(index) =>
+            setAttachments((prev) => prev.filter((_, i) => i !== index))
+          }
+        />
+        <input
           placeholder="Type a message..."
-          className="
-            min-h-11
-            max-h-32
-            min-w-0
-            flex-1
-            resize-none
-            overflow-y-auto
-            border-none
-            bg-transparent
-            px-1
-            py-3
-            text-sm
-            leading-5
-            text-slate-900
-            outline-none
-            placeholder:text-slate-400
-            dark:text-white
-          "
-          onChange={(event) => {
-            setValue(
-              event.target.value,
-            );
-            resizeTextarea();
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.key ===
-                "Enter" &&
-              !event.shiftKey
-            ) {
-              event.preventDefault();
-              void handleSendMessage();
+          type="text"
+          className="flex-1 h-full text-sm bg-transparent border-none outline-none"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && value.length > 0) {
+              e.preventDefault();
+              handleSendMessage(value);
             }
           }}
           value={value}
         />
 
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            aria-label="Open emoji picker"
-            onClick={() => {
-              setEmojiOpen(
-                (previous) =>
-                  !previous,
-              );
-              setAttachmentBarActive(
-                false,
-              );
-            }}
-            className="
-              flex
-              h-11
-              w-11
-              items-center
-              justify-center
-              rounded-full
-              text-slate-600
-              transition
-              hover:bg-slate-100
-              hover:text-elitePurple
-              dark:text-slate-300
-              dark:hover:bg-slate-800
-            "
-          >
-            <BsEmojiSmile
-              size={19}
-            />
-          </button>
+        <div className="relative">
+          <BsEmojiSmile
+            className="cursor-pointer text-slate-600 mr-0.5"
+            size={18}
+            onClick={() => setEmojiOpen((prev) => !prev)}
+          />
 
-          {emojiOpen ? (
-            <div
-              className="
-                absolute
-                bottom-14
-                right-0
-                z-50
-                w-[min(320px,calc(100vw-1rem))]
-                overflow-hidden
-                rounded-2xl
-                shadow-2xl
-              "
-            >
+          {emojiOpen && (
+            <div className="absolute bottom-10 right-0 z-50">
               <EmojiPicker
-                width="100%"
-                height={380}
-                onEmojiClick={(
-                  emojiData,
-                ) => {
-                  setValue(
-                    (previous) =>
-                      previous +
-                      emojiData.emoji,
-                  );
-
+                onEmojiClick={(emojiData) => {
+                  setValue((prev) => prev + emojiData.emoji);
                   setEmojiOpen(false);
-
-                  requestAnimationFrame(
-                    () => {
-                      textareaRef.current?.focus();
-                      resizeTextarea();
-                    },
-                  );
                 }}
               />
             </div>
-          ) : null}
+          )}
         </div>
-
-        <button
-          type="button"
-          aria-label="Send message"
-          disabled={
-            !canSend ||
-            isSending ||
-            !rid
-          }
-          onClick={() =>
-            void handleSendMessage()
-          }
-          className="
-            flex
-            h-11
-            w-11
-            shrink-0
-            items-center
-            justify-center
-            rounded-full
-            bg-elitePurple
-            text-white
-            transition
-            hover:scale-95
-            hover:brightness-110
-            disabled:cursor-not-allowed
-            disabled:opacity-50
-            disabled:hover:scale-100
-          "
-        >
-          <IoIosSend size={24} />
-        </button>
+        <div className=" bg-elitePurple rounded-full w-10 h-10 p-1 flex items-center justify-center hover:scale-90 transition-transform duration-75 ease-in-out">
+          <IoIosSend
+            className="cursor-pointer text-white mr-0.5"
+            size={25}
+            onClick={() => handleSendMessage(value)}
+          />
+        </div>
       </div>
     </div>
   );
@@ -455,35 +180,22 @@ const SendInput = ({
 
 export default SendInput;
 
-const getFileType = (
-  file: File,
-): AttachmentType => {
-  if (
-    file.type.startsWith(
-      "image/",
-    )
-  ) {
+const getFileType = (file: File): AttachmentType => {
+  if (file.type.startsWith("image/")) {
     return AttachmentType.IMAGE;
   }
 
-  if (
-    file.type.startsWith(
-      "video/",
-    )
-  ) {
+  if (file.type.startsWith("video/")) {
     return AttachmentType.VIDEO;
   }
 
   if (
-    file.type ===
-      "application/pdf" ||
-    file.type.includes(
-      "document",
-    ) ||
+    file.type === "application/pdf" ||
+    file.type.includes("document") ||
     file.type.includes("word")
   ) {
     return AttachmentType.DOCUMENT;
   }
 
-  return AttachmentType.FILE;
+  return AttachmentType.DOCUMENT;
 };

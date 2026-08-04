@@ -4,10 +4,13 @@ import {
   Controller,
   Get,
   Param,
+  ParseFilePipeBuilder,
   Patch,
   Req,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
@@ -16,11 +19,19 @@ import type { Request, Response } from 'express';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { UpdateProfileDto } from './dtos/update-profile.dto';
 import { ProfileService } from './profile.service';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 interface AuthenticatedRequest extends Request {
   user?: {
     id?: string;
   };
+}
+
+interface UploadedProfilePicture {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
 }
 
 @Controller('profile')
@@ -29,10 +40,7 @@ export class ProfileController {
 
   @Get('me')
   @UseGuards(JwtGuard)
-  async getMyProfile(
-    @Req() req: AuthenticatedRequest,
-    @Res() res: Response,
-  ) {
+  async getMyProfile(@Req() req: AuthenticatedRequest, @Res() res: Response) {
     const uid = this.getUserId(req);
     const result = await this.profileService.getMyProfile(uid);
 
@@ -40,21 +48,39 @@ export class ProfileController {
   }
 
   @Patch('me')
+  @UseInterceptors(FileInterceptor('profilePicture'))
   @UseGuards(JwtGuard)
-  @UsePipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  )
   async updateMyProfile(
-    @Req() req: AuthenticatedRequest,
-    @Res() res: Response,
-    @Body() dto: UpdateProfileDto,
+    @Req()
+    req: AuthenticatedRequest,
+
+    @Res()
+    res: Response,
+
+    @Body()
+    dto: UpdateProfileDto,
+
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addFileTypeValidator({
+          fileType: /^image\/(jpeg|png|webp)$/,
+        })
+        .addMaxSizeValidator({
+          maxSize: 5 * 1024 * 1024,
+        })
+        .build({
+          fileIsRequired: false,
+        }),
+    )
+    profilePicture?: UploadedProfilePicture,
   ) {
     const uid = this.getUserId(req);
-    const result = await this.profileService.updateMyProfile(uid, dto);
+
+    const result = await this.profileService.updateMyProfile(
+      uid,
+      dto,
+      profilePicture,
+    );
 
     return res.status(result.code).json(result);
   }

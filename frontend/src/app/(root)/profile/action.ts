@@ -68,8 +68,21 @@ export async function UpdateMyProfile(
   input: UpdateProfileInput,
 ): Promise<ProfileScreenData> {
   try {
+    const formData = new FormData();
+
+    formData.append("firstname", input.firstname.trim());
+    formData.append("lastname", input.lastname.trim());
+    formData.append("username", input.username.trim());
+
+    // Sending an empty string lets your DTO transform it into null.
+    formData.append("bio", input.bio?.trim() ?? "");
+
+    if (input.profilePicture) {
+      formData.append("profilePicture", input.profilePicture);
+    }
+
     const response: AxiosResponse<ApiResponse<ProfileScreenData>> =
-      await ServerEndpoint.patch("/profile/me", input, {
+      await ServerEndpoint.patch("/profile/me", formData, {
         withCredentials: true,
       });
 

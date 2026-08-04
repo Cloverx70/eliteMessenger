@@ -1,12 +1,12 @@
-import Link from 'next/link';
-import { MessageCircle, UsersRound } from 'lucide-react';
+import { EmptyState, ErrorState, SectionSkeleton } from "./section-state";
+import { MessageCircle, UsersRound } from "lucide-react";
 
-import { homeIntegrationRoutes } from '../integration-routes';
-import type { HomeConversation } from '../types';
-import { formatRelativeTime } from '../utils';
-import Avatar from './avatar';
-import SectionCard from './section-card';
-import { EmptyState, ErrorState, SectionSkeleton } from './section-state';
+import Avatar from "./avatar";
+import type { HomeConversation } from "../types";
+import Link from "next/link";
+import SectionCard from "./section-card";
+import { formatRelativeTime } from "../utils";
+import { homeIntegrationRoutes } from "../integration-routes";
 
 interface ContinueConversationsProps {
   conversations: HomeConversation[];
@@ -57,7 +57,7 @@ export default function ContinueConversations({
                   />
                 ) : (
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eee7ff] text-[#7140e8]">
-                    {conversation.kind === 'group' ? (
+                    {conversation.kind === "group" ? (
                       <UsersRound size={19} />
                     ) : (
                       <MessageCircle size={19} />
@@ -89,7 +89,7 @@ export default function ContinueConversations({
                 {conversation.unreadCount > 0 ? (
                   <span className="flex min-h-5 min-w-5 items-center justify-center rounded-full bg-[#6d36ed] px-1.5 text-[10px] font-bold text-white">
                     {conversation.unreadCount > 99
-                      ? '99+'
+                      ? "99+"
                       : conversation.unreadCount}
                   </span>
                 ) : (

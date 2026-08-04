@@ -4,17 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  In,
-  MoreThanOrEqual,
-  Not,
-  Repository,
-} from 'typeorm';
+import { In, MoreThanOrEqual, Not, Repository } from 'typeorm';
 
-import {
-  FriendStatus,
-  Friends,
-} from '../../database/entities/friends.entity';
+import { FriendStatus, Friends } from '../../database/entities/friends.entity';
 import { GroupChat } from '../../database/entities/groupChat.entity';
 import { GroupMember } from '../../database/entities/groupMember.entity';
 import { Post } from '../../database/entities/post.entity';
@@ -26,12 +18,14 @@ import { S3Service } from '../../utils/s3/s3.service';
 import { UpdateProfileDto } from './dtos/update-profile.dto';
 
 export type ProfileFriendshipStatus =
-  | 'SELF'
-  | 'NONE'
-  | 'OUTGOING_PENDING'
-  | 'INCOMING_PENDING'
-  | 'FRIENDS';
+  'SELF' | 'NONE' | 'OUTGOING_PENDING' | 'INCOMING_PENDING' | 'FRIENDS';
 
+interface UploadedProfilePicture {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+}
 @Injectable()
 export class ProfileService {
   constructor(
@@ -89,11 +83,7 @@ export class ProfileService {
       throw new NotFoundException('Profile not found');
     }
 
-    const data = await this.buildProfile(
-      viewerId,
-      user,
-      viewerId === user.id,
-    );
+    const data = await this.buildProfile(viewerId, user, viewerId === user.id);
 
     return {
       message: 'Profile returned successfully',
@@ -102,13 +92,19 @@ export class ProfileService {
     };
   }
 
-  async updateMyProfile(userId: string, dto: UpdateProfileDto) {
-    if (Object.keys(dto).length === 0) {
+  async updateMyProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+    profilePicture?: UploadedProfilePicture,
+  ) {
+    if (Object.keys(dto).length === 0 && !profilePicture) {
       throw new BadRequestException('No profile changes were supplied');
     }
 
     const user = await this.userRepo.findOne({
-      where: { id: userId },
+      where: {
+        id: userId,
+      },
     });
 
     if (!user) {
@@ -131,28 +127,58 @@ export class ProfileService {
       }
     }
 
-    if (dto.firstname !== undefined) {
-      user.firstname = dto.firstname;
+    let uploadedProfilePictureKey: string | null = null;
+
+    try {
+      if (profilePicture) {
+        const uploaded = await this.s3Service.uploadProfilePicture(
+          userId,
+          profilePicture,
+        );
+
+        /*
+         * This must be a permanent public
+         * or CDN URL, not an expiring
+         * signed URL.
+         */
+        user.userPfpUrl = uploaded.key;
+
+        uploadedProfilePictureKey = uploaded.key;
+      }
+
+      if (dto.firstname !== undefined) {
+        user.firstname = dto.firstname;
+      }
+
+      if (dto.lastname !== undefined) {
+        user.lastname = dto.lastname;
+      }
+
+      if (dto.username !== undefined) {
+        user.username = dto.username;
+      }
+
+      if (dto.bio !== undefined) {
+        user.bio = dto.bio ?? '';
+      }
+
+      await this.userRepo.save(user);
+    } catch (error) {
+      if (uploadedProfilePictureKey) {
+        await this.s3Service
+          .deleteFile(uploadedProfilePictureKey)
+          .catch(() => undefined);
+      }
+
+      throw error;
     }
 
-    if (dto.lastname !== undefined) {
-      user.lastname = dto.lastname;
-    }
+    const result = await this.getMyProfile(userId);
 
-    if (dto.username !== undefined) {
-      user.username = dto.username;
-    }
-
-    if (dto.bio !== undefined) {
-      user.bio = dto.bio ?? '';
-    }
-
-    await this.userRepo.save(user);
-
-    return this.getMyProfile(userId).then((result) => ({
+    return {
       ...result,
       message: 'Profile updated successfully',
-    }));
+    };
   }
 
   private async buildProfile(
@@ -160,6 +186,14 @@ export class ProfileService {
     profileUser: User,
     isOwnProfile: boolean,
   ) {
+    if (profileUser.userPfpUrl) {
+      const UserPFPURL = await this.s3Service.getFileUrl(
+        profileUser.userPfpUrl,
+      );
+
+      profileUser.userPfpUrl = UserPFPURL.url;
+    }
+
     const friendshipStatus = await this.getFriendshipStatus(
       viewerId,
       profileUser.id,
@@ -250,14 +284,9 @@ export class ProfileService {
   private async serializePost(post: Post) {
     const attachments = await Promise.all(
       [...(post.attachments ?? [])]
-        .sort(
-          (first, second) =>
-            first.displayOrder - second.displayOrder,
-        )
+        .sort((first, second) => first.displayOrder - second.displayOrder)
         .map(async (attachment) => {
-          const { url } = await this.s3Service.getFileUrl(
-            attachment.key,
-          );
+          const { url } = await this.s3Service.getFileUrl(attachment.key);
 
           return {
             id: attachment.id,
@@ -347,16 +376,13 @@ export class ProfileService {
       .where('friend.status = :status', {
         status: FriendStatus.ACCEPTED,
       })
-      .andWhere(
-        '(friend.user1Id = :userId OR friend.user2Id = :userId)',
-        { userId },
-      )
+      .andWhere('(friend.user1Id = :userId OR friend.user2Id = :userId)', {
+        userId,
+      })
       .getMany();
 
     return friendships.map((friendship) =>
-      friendship.user1Id === userId
-        ? friendship.user2Id
-        : friendship.user1Id,
+      friendship.user1Id === userId ? friendship.user2Id : friendship.user1Id,
     );
   }
 
@@ -366,10 +392,9 @@ export class ProfileService {
       .where('friend.status = :status', {
         status: FriendStatus.ACCEPTED,
       })
-      .andWhere(
-        '(friend.user1Id = :userId OR friend.user2Id = :userId)',
-        { userId },
-      )
+      .andWhere('(friend.user1Id = :userId OR friend.user2Id = :userId)', {
+        userId,
+      })
       .getCount();
   }
 
@@ -378,9 +403,7 @@ export class ProfileService {
     profileUserId: string,
     isOwnProfile: boolean,
   ) {
-    const profileFriendIds = await this.getAcceptedFriendIds(
-      profileUserId,
-    );
+    const profileFriendIds = await this.getAcceptedFriendIds(profileUserId);
 
     let visibleFriendIds = profileFriendIds;
 
@@ -405,15 +428,19 @@ export class ProfileService {
       take: 6,
     });
 
-    const order = new Map(
-      visibleFriendIds.map((id, index) => [id, index]),
-    );
+    for (const user of users) {
+      if (user.userPfpUrl) {
+        const PFPURL = await this.s3Service.getFileUrl(user.userPfpUrl);
+        user.userPfpUrl = PFPURL.url;
+      }
+    }
+
+    const order = new Map(visibleFriendIds.map((id, index) => [id, index]));
 
     return users
       .sort(
         (first, second) =>
-          (order.get(first.id) ?? 0) -
-          (order.get(second.id) ?? 0),
+          (order.get(first.id) ?? 0) - (order.get(second.id) ?? 0),
       )
       .map((user) => this.safePerson(user));
   }
@@ -455,9 +482,7 @@ export class ProfileService {
   }
 
   private async getActivity(userId: string) {
-    const from = new Date(
-      Date.now() - 30 * 24 * 60 * 60 * 1000,
-    );
+    const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const [
       postsCreated,
@@ -493,10 +518,9 @@ export class ProfileService {
           status: FriendStatus.ACCEPTED,
         })
         .andWhere('friend.acceptedDate >= :from', { from })
-        .andWhere(
-          '(friend.user1Id = :userId OR friend.user2Id = :userId)',
-          { userId },
-        )
+        .andWhere('(friend.user1Id = :userId OR friend.user2Id = :userId)', {
+          userId,
+        })
         .getCount(),
 
       this.groupMemberRepo.count({

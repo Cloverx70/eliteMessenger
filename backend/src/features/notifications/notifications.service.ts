@@ -2,12 +2,11 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, Repository, SelectQueryBuilder } from 'typeorm';
 
-import { Friends } from '../../database/entities/friends.entity';
+import { Friends, FriendStatus } from '../../database/entities/friends.entity';
 import {
   Notification,
   NotificationCategory,
@@ -167,8 +166,7 @@ export class NotificationsService {
     @InjectRepository(PostAttachment)
     private readonly postAttachmentRepo: Repository<PostAttachment>,
 
-    @Optional()
-    private readonly s3Service?: S3Service,
+    private readonly s3Service: S3Service,
   ) {}
 
   // ============================================================
@@ -591,10 +589,12 @@ export class NotificationsService {
 
     const thumbnailMap = await this.getPostThumbnailMap(pageItems);
 
-    const items = pageItems.map((notification) =>
-      this.serializeNotification(
-        notification,
-        thumbnailMap.get(notification.entityId ?? '') ?? null,
+    const items = await Promise.all(
+      pageItems.map((notification) =>
+        this.serializeNotification(
+          notification,
+          thumbnailMap.get(notification.entityId ?? '') ?? null,
+        ),
       ),
     );
 
@@ -639,14 +639,16 @@ export class NotificationsService {
         ? await this.getMutualFriends(recipientId, notification.actorId)
         : [];
 
+    const serializedNotification = await this.serializeNotification(
+      notification,
+      thumbnailMap.get(notification.entityId ?? '') ?? null,
+    );
+
     return {
       message: 'Notification returned successfully',
       code: 200,
       data: {
-        ...this.serializeNotification(
-          notification,
-          thumbnailMap.get(notification.entityId ?? '') ?? null,
-        ),
+        ...serializedNotification,
         mutualFriends,
       },
     };
@@ -824,18 +826,12 @@ export class NotificationsService {
       postIds.map(async (postId) => {
         const attachment = firstAttachmentByPost.get(postId);
 
-        if (!attachment || !this.s3Service) {
+        if (!attachment) {
           result.set(postId, null);
           return;
         }
 
-        try {
-          const { url } = await this.s3Service.getFileUrl(attachment.key);
-
-          result.set(postId, url);
-        } catch {
-          result.set(postId, null);
-        }
+        result.set(postId, await this.resolveStoredFileUrl(attachment.key));
       }),
     );
 
@@ -846,7 +842,7 @@ export class NotificationsService {
     const friendships = await this.friendsRepo
       .createQueryBuilder('friend')
       .where('friend.status = :acceptedStatus', {
-        acceptedStatus: 'ACCEPTED',
+        acceptedStatus: FriendStatus.ACCEPTED,
       })
       .andWhere(
         `(
@@ -897,13 +893,14 @@ export class NotificationsService {
 
     const userMap = new Map(users.map((user) => [user.id, user]));
 
-    return mutualIds
+    const mutualUsers = mutualIds
       .map((userId) => userMap.get(userId))
-      .filter((user): user is User => Boolean(user))
-      .map((user) => this.safeUser(user));
+      .filter((user): user is User => Boolean(user));
+
+    return Promise.all(mutualUsers.map((user) => this.safeUser(user)));
   }
 
-  private serializeNotification(
+  private async serializeNotification(
     notification: Notification,
     thumbnailUrl: string | null,
   ) {
@@ -912,7 +909,7 @@ export class NotificationsService {
       category: notification.category,
       type: notification.type,
 
-      actor: this.safeUser(notification.actor),
+      actor: await this.safeUser(notification.actor),
 
       entityType: notification.entityType,
       entityId: notification.entityId,
@@ -928,6 +925,12 @@ export class NotificationsService {
       readAt: notification.readAt,
       createdAt: notification.createdAt,
       updatedAt: notification.updatedAt,
+
+      // Correct spelling.
+      recipientId: notification.recipientId,
+
+      // Temporary compatibility for any frontend code using the old typo.
+      recepientId: notification.recipientId,
     };
   }
 
@@ -936,7 +939,7 @@ export class NotificationsService {
       case NotificationType.FRIEND_REQUEST_RECEIVED:
       case NotificationType.FRIEND_REQUEST_ACCEPTED:
         return {
-          href: notification.actor?.username
+          href: notification.actor?.id
             ? `/profile/${notification.actor.id}`
             : '/friends',
           available: true,
@@ -949,7 +952,7 @@ export class NotificationsService {
           href: notification.entityId
             ? `/discover?post=${notification.entityId}${
                 notification.secondaryEntityId
-                  ? `?comment=${notification.secondaryEntityId}`
+                  ? `&comment=${notification.secondaryEntityId}`
                   : ''
               }`
             : null,
@@ -991,7 +994,29 @@ export class NotificationsService {
     }
   }
 
-  private safeUser(user?: User | null) {
+  private async resolveStoredFileUrl(
+    value?: string | null,
+  ): Promise<string | null> {
+    if (!value) {
+      return null;
+    }
+
+    // External/demo URLs are already usable and must not be sent to S3.
+    if (/^https?:\/\//i.test(value)) {
+      return value;
+    }
+
+    try {
+      const { url } = await this.s3Service.getFileUrl(value);
+      return url || null;
+    } catch {
+      // A broken profile picture or post thumbnail must not break
+      // the complete notifications response.
+      return null;
+    }
+  }
+
+  private async safeUser(user?: User | null) {
     if (!user) {
       return null;
     }
@@ -1001,7 +1026,11 @@ export class NotificationsService {
       username: user.username,
       firstname: user.firstname,
       lastname: user.lastname,
-      userPfpUrl: user.userPfpUrl ?? null,
+
+      // Resolve the stored S3 key only for this response object.
+      // The TypeORM entity is not changed and is never saved.
+      userPfpUrl: await this.resolveStoredFileUrl(user.userPfpUrl),
+
       isActive: user.isActive,
       lastSeen: user.lastSeen ?? null,
     };

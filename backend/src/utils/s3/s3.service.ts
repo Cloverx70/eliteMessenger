@@ -13,6 +13,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
+
+interface UploadedProfilePicture {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+}
 
 export interface SignedFileUrls {
   url: string;
@@ -115,5 +123,35 @@ export class S3Service {
 
       throw new NotFoundException('Could not generate file URL.');
     }
+  }
+
+  async uploadProfilePicture(userId: string, file: UploadedProfilePicture) {
+    const buffer = await sharp(file.buffer)
+      .rotate()
+      .resize(512, 512, {
+        fit: 'cover',
+        position: 'centre',
+      })
+      .webp({
+        quality: 85,
+      })
+      .toBuffer();
+
+    const key = `profile-pictures/${userId}/` + `${randomUUID()}.webp`;
+
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: 'image/webp',
+        CacheControl: 'public, max-age=31536000, immutable',
+      }),
+    );
+
+    return {
+      key,
+      url: await this.getFileUrl(key, 10000),
+    };
   }
 }

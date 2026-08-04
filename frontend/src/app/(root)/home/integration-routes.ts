@@ -18,8 +18,8 @@ export const homeIntegrationRoutes = {
     notifications: "/notifications",
 
     directChat: (chatroomId: string) => `/chats/${chatroomId}`,
-    groupChat: (groupId: string) => `/chats/groups/${groupId}`,
-    post: (postId: string) => `/discover?postId=${postId}`,
+    groupChat: (groupId: string) => `/groups/${groupId}`,
+    post: (postId: string) => `/discover?post=${postId}`,
     profile: (username: string) => `/profile/${encodeURIComponent(username)}`,
   },
 } as const;

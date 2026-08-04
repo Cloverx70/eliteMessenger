@@ -1008,6 +1008,14 @@ export class PostsService {
 
     const serialized = await Promise.all(
       posts.map(async (post): Promise<PostResponse> => {
+        if (post.author.userPfpUrl) {
+          const pfpurl = await this.s3Service.getFileUrl(
+            post.author.userPfpUrl,
+          );
+
+          post.author.userPfpUrl = pfpurl.url;
+        }
+
         const attachments = await Promise.all(
           [...post.attachments]
             .sort((a, b) => a.displayOrder - b.displayOrder)

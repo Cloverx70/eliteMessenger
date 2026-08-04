@@ -81,12 +81,12 @@ export interface ProfileScreenData {
 }
 
 export interface UpdateProfileInput {
-  firstname?: string;
-  lastname?: string;
-  username?: string;
-  bio?: string | null;
+  firstname: string;
+  lastname: string;
+  username: string;
+  bio: string | null;
+  profilePicture?: File | null;
 }
-
 export interface ApiResponse<T> {
   message: string;
   code: number;

@@ -12,7 +12,6 @@ export interface IChatRoom {
   recLastname: string;
   recUserPfpUrl: string;
   recBio?: string;
-  recIsActive: boolean;
   messages?: IMessage[];
   createdAt: string;
   updatedAt: string;
@@ -20,6 +19,8 @@ export interface IChatRoom {
   lastMessage?: string | null;
   lastMessageDate?: Date | null;
   unreadMessages: IMessage[];
+  recIsActive: boolean;
+  recLastSeen: string | null;
   name?: string | null;
 }
 

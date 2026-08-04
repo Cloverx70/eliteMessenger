@@ -100,7 +100,7 @@ export function NotificationsShell() {
       return;
     }
 
-    declineFriendRequestMutation.mutate(notification.entityId, {
+    declineFriendRequestMutation.mutate(notification.actor!.id, {
       onSuccess: () => {
         deleteMutation.mutate(notification.id, {
           onSuccess: () => {

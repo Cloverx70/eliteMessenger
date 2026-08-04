@@ -5,7 +5,7 @@ import { Montserrat, Roboto } from "next/font/google";
 import type { Metadata } from "next";
 import { QueryProvider } from "../providers/query-provider";
 import SideBar from "../components/root-components/SideBar";
-import { SocketProvider } from "../providers/socket-provider";
+import { SocketProvider } from "../providers/SocketProvider";
 import { ThemeProvider } from "../providers/theme-provider";
 import { Toaster } from "react-hot-toast";
 import { getUserFromCookie } from "@/lib/user-auth";

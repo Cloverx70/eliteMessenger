@@ -9,6 +9,7 @@ import { GroupMember } from '../../database/entities/groupMember.entity';
 import { GroupMessage } from '../../database/entities/groupMessage.entity';
 import { GroupMessageAttachment } from '../../database/entities/groupMessageAttachment.entity';
 import { GroupMessageReceipt } from '../../database/entities/groupMessageReceipt.entity';
+import { JwtModule } from '@nestjs/jwt';
 import { Message } from '../../database/entities/message.entity';
 import { MessageAttachment } from '../../database/entities/messageAttachment.entity';
 import { Module } from '@nestjs/common';
@@ -32,6 +33,7 @@ import { User } from '../../database/entities/user.entity';
       GroupMessageReceipt,
       Post,
     ]),
+    JwtModule.register({}),
     S3Module,
     NotificationsModule,
   ],

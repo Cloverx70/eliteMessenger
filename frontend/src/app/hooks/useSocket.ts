@@ -1,12 +1,13 @@
-import { IAttachment, IMessage } from "../(root)/chats/action";
-import {
-  IGroupMessage,
-  IGroupReceiptSummary,
-} from "../(root)/groups/group-action";
-import { Socket, io } from "socket.io-client";
-import { useEffect, useRef } from "react";
+"use client";
 
-let socketInstance: Socket | null = null;
+import { useCallback, useEffect, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
+
+import type {
+  IAttachment,
+  IMessage,
+} from "@/app/(root)/chats/action";
+import type { IGroupMessage } from "@/app/(root)/groups/group-action";
 
 export type DirectSentAck = {
   tempId: string;
@@ -14,214 +15,326 @@ export type DirectSentAck = {
 };
 
 export type DirectDeliveredAck = {
-  tempId?: string;
   messageId: string;
+  tempId?: string;
   status: "delivered";
 };
 
-export type GroupSentAck = {
-  tempId: string;
-  message: IGroupMessage;
+export type DirectSeenAck = {
+  messageId: string;
 };
 
-export type GroupReceiptAck = IGroupReceiptSummary & {
+export type GroupReceiptAck = {
   messageId: string;
   groupId: string;
-  senderId?: string | null;
-  recipientUserId?: string;
-  seenByUserId?: string;
+  totalRecipients: number;
+  deliveredCount: number;
+  seenCount: number;
+  status: "sent" | "delivered" | "seen";
 };
+
+export type PresenceUpdate = {
+  userId: string;
+  isActive: boolean;
+  lastSeen: string | null;
+};
+
+const socketUrl =
+  process.env.NEXT_PUBLIC_SOCKET_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:3000";
 
 export const useSocket = (userId: string) => {
   const socketRef = useRef<Socket | null>(null);
-
-  if (!socketInstance) {
-    socketInstance = io("http://localhost:3001", {
-      withCredentials: true,
-    });
-  }
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    if (!userId) return;
-
-    const socket = socketInstance!;
-
-    const handleConnect = () => {
-      socket.emit("join", userId);
-    };
-
-    if (socket.connected) {
-      handleConnect();
-    } else {
-      socket.on("connect", handleConnect);
+    if (!userId) {
+      return;
     }
 
-    socketRef.current = socket;
+    const socketInstance = io(socketUrl, {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1_000,
+      reconnectionDelayMax: 5_000,
+      timeout: 20_000,
+    });
+
+    socketRef.current = socketInstance;
+    setSocket(socketInstance);
+
+    const handleConnect = () => {
+      setIsConnected(true);
+      console.log("Socket connected:", socketInstance.id);
+    };
+
+    const handleDisconnect = (reason: string) => {
+      setIsConnected(false);
+      console.log("Socket disconnected:", reason);
+    };
+
+    const handleConnectError = (error: Error) => {
+      setIsConnected(false);
+      console.error("Socket connection error:", error.message);
+    };
+
+    socketInstance.on("connect", handleConnect);
+    socketInstance.on("disconnect", handleDisconnect);
+    socketInstance.on("connect_error", handleConnectError);
 
     return () => {
-      socket.off("connect", handleConnect);
+      socketInstance.off("connect", handleConnect);
+      socketInstance.off("disconnect", handleDisconnect);
+      socketInstance.off("connect_error", handleConnectError);
+      socketInstance.removeAllListeners();
+      socketInstance.disconnect();
+
+      socketRef.current = null;
+      setSocket(null);
+      setIsConnected(false);
     };
   }, [userId]);
 
-  const sendMessage = (
-    sid: string,
-    rid: string,
-    text: string,
-    crid: string,
-    tempId: string,
-    attachments?: IAttachment[],
-  ) => {
-    socketRef.current?.emit("send-message", {
-      sid,
-      rid,
-      text,
-      crid,
-      tempId,
-      attachments,
-    });
-  };
+  const sendMessage = useCallback(
+    (
+      sid: string,
+      rid: string,
+      text: string,
+      crid: string,
+      tempId: string,
+      attachments: IAttachment[] = [],
+      sharedPostId?: string,
+    ) => {
+      socketRef.current?.emit("send-message", {
+        sid,
+        rid,
+        text,
+        crid,
+        tempId,
+        attachments,
+        sharedPostId,
+      });
+    },
+    [],
+  );
 
-  const joinRoom = (roomId: string, currentUserId: string) => {
+  const joinRoom = useCallback((roomId: string, currentUserId: string) => {
     socketRef.current?.emit("joinRoom", {
       roomId,
       userId: currentUserId,
     });
-  };
+  }, []);
 
-  const leaveRoom = (roomId: string, currentUserId: string) => {
+  const leaveRoom = useCallback((roomId: string, currentUserId: string) => {
     socketRef.current?.emit("leaveRoom", {
       roomId,
       userId: currentUserId,
     });
-  };
+  }, []);
 
-  const messageSeen = (crid: string, sid: string) => {
-    socketRef.current?.emit("message-seen", { crid, sid });
-  };
-
-  const sendGroupMessage = (
-    sid: string,
-    groupId: string,
-    text: string,
-    tempId: string,
-    attachments?: IAttachment[],
-  ) => {
-    socketRef.current?.emit("send-group-message", {
+  const messageSeen = useCallback((crid: string, sid: string) => {
+    socketRef.current?.emit("message-seen", {
+      crid,
       sid,
-      gid: groupId,
-      text,
-      tempId,
-      attachments,
     });
-  };
+  }, []);
 
-  const joinGroupRoom = (groupId: string, currentUserId: string) => {
-    socketRef.current?.emit("joinGroupRoom", {
-      groupId,
-      userId: currentUserId,
-    });
-  };
-
-  const leaveGroupRoom = (groupId: string, currentUserId: string) => {
-    socketRef.current?.emit("leaveGroupRoom", {
-      groupId,
-      userId: currentUserId,
-    });
-  };
-
-  const groupMessagesSeen = (groupId: string, currentUserId: string) => {
-    socketRef.current?.emit("group-message-seen", {
-      groupId,
-      userId: currentUserId,
-    });
-  };
-
-  const onMessage = (callback: (message: IMessage) => void) => {
+  const onMessage = useCallback((callback: (message: IMessage) => void) => {
     socketRef.current?.on("receiveMessage", callback);
-  };
+  }, []);
 
-  const offMessage = (callback: (message: IMessage) => void) => {
+  const offMessage = useCallback((callback: (message: IMessage) => void) => {
     socketRef.current?.off("receiveMessage", callback);
-  };
+  }, []);
 
-  const onSentACK = (callback: (ack: DirectSentAck) => void) => {
+  const onSentACK = useCallback((callback: (ack: DirectSentAck) => void) => {
     socketRef.current?.on("message-sent-ack", callback);
-  };
+  }, []);
 
-  const onDeliveredACK = (callback: (ack: DirectDeliveredAck) => void) => {
-    socketRef.current?.on("message-delivered-ack", callback);
-  };
+  const offSentACK = useCallback((callback: (ack: DirectSentAck) => void) => {
+    socketRef.current?.off("message-sent-ack", callback);
+  }, []);
 
-  const onSeenACK = (callback: (ack: { messageId: string }) => void) => {
+  const onDeliveredACK = useCallback(
+    (callback: (ack: DirectDeliveredAck) => void) => {
+      socketRef.current?.on("message-delivered-ack", callback);
+    },
+    [],
+  );
+
+  const offDeliveredACK = useCallback(
+    (callback: (ack: DirectDeliveredAck) => void) => {
+      socketRef.current?.off("message-delivered-ack", callback);
+    },
+    [],
+  );
+
+  const onSeenACK = useCallback((callback: (ack: DirectSeenAck) => void) => {
     socketRef.current?.on("message-seen-ack", callback);
-  };
+  }, []);
 
-  const onNotification = (callback: (message: IMessage) => void) => {
-    socketRef.current?.on("new-message-notification", callback);
-  };
+  const offSeenACK = useCallback((callback: (ack: DirectSeenAck) => void) => {
+    socketRef.current?.off("message-seen-ack", callback);
+  }, []);
 
-  const offNotification = (callback: (message: IMessage) => void) => {
-    socketRef.current?.off("new-message-notification", callback);
-  };
+  const sendGroupMessage = useCallback(
+    (
+      sid: string,
+      gid: string,
+      text: string,
+      tempId: string,
+      attachments: IAttachment[] = [],
+      sharedPostId?: string,
+    ) => {
+      socketRef.current?.emit("send-group-message", {
+        sid,
+        gid,
+        text,
+        tempId,
+        attachments,
+        sharedPostId,
+      });
+    },
+    [],
+  );
 
-  const onGroupMessage = (callback: (message: IGroupMessage) => void) => {
-    socketRef.current?.on("receive-group-message", callback);
-  };
+  const joinGroupRoom = useCallback(
+    (groupId: string, currentUserId: string) => {
+      socketRef.current?.emit("joinGroupRoom", {
+        groupId,
+        userId: currentUserId,
+      });
+    },
+    [],
+  );
 
-  const offGroupMessage = (callback: (message: IGroupMessage) => void) => {
-    socketRef.current?.off("receive-group-message", callback);
-  };
+  const leaveGroupRoom = useCallback(
+    (groupId: string, currentUserId: string) => {
+      socketRef.current?.emit("leaveGroupRoom", {
+        groupId,
+        userId: currentUserId,
+      });
+    },
+    [],
+  );
 
-  const onGroupSentACK = (callback: (ack: GroupSentAck) => void) => {
-    socketRef.current?.on("group-message-sent-ack", callback);
-  };
+  const groupMessagesSeen = useCallback(
+    (groupId: string, currentUserId: string) => {
+      socketRef.current?.emit("group-message-seen", {
+        groupId,
+        userId: currentUserId,
+      });
+    },
+    [],
+  );
 
-  const offGroupSentACK = (callback: (ack: GroupSentAck) => void) => {
-    socketRef.current?.off("group-message-sent-ack", callback);
-  };
+  const onGroupMessage = useCallback(
+    (callback: (message: IGroupMessage) => void) => {
+      socketRef.current?.on("receive-group-message", callback);
+    },
+    [],
+  );
 
-  const onGroupDeliveredACK = (callback: (ack: GroupReceiptAck) => void) => {
-    socketRef.current?.on("group-message-delivered-ack", callback);
-  };
+  const offGroupMessage = useCallback(
+    (callback: (message: IGroupMessage) => void) => {
+      socketRef.current?.off("receive-group-message", callback);
+    },
+    [],
+  );
 
-  const offGroupDeliveredACK = (callback: (ack: GroupReceiptAck) => void) => {
-    socketRef.current?.off("group-message-delivered-ack", callback);
-  };
+  const onGroupSentACK = useCallback(
+    (
+      callback: (ack: {
+        tempId: string;
+        message: IGroupMessage;
+      }) => void,
+    ) => {
+      socketRef.current?.on("group-message-sent-ack", callback);
+    },
+    [],
+  );
 
-  const onGroupSeenACK = (callback: (ack: GroupReceiptAck) => void) => {
-    socketRef.current?.on("group-message-seen-ack", callback);
-  };
+  const offGroupSentACK = useCallback(
+    (
+      callback: (ack: {
+        tempId: string;
+        message: IGroupMessage;
+      }) => void,
+    ) => {
+      socketRef.current?.off("group-message-sent-ack", callback);
+    },
+    [],
+  );
 
-  const offGroupSeenACK = (callback: (ack: GroupReceiptAck) => void) => {
-    socketRef.current?.off("group-message-seen-ack", callback);
-  };
+  const onGroupDeliveredACK = useCallback(
+    (callback: (ack: GroupReceiptAck) => void) => {
+      socketRef.current?.on("group-message-delivered-ack", callback);
+    },
+    [],
+  );
 
-  const onGroupNotification = (callback: (message: IGroupMessage) => void) => {
-    socketRef.current?.on("new-group-message-notification", callback);
-  };
+  const offGroupDeliveredACK = useCallback(
+    (callback: (ack: GroupReceiptAck) => void) => {
+      socketRef.current?.off("group-message-delivered-ack", callback);
+    },
+    [],
+  );
 
-  const offGroupNotification = (callback: (message: IGroupMessage) => void) => {
-    socketRef.current?.off("new-group-message-notification", callback);
-  };
+  const onGroupSeenACK = useCallback(
+    (callback: (ack: GroupReceiptAck) => void) => {
+      socketRef.current?.on("group-message-seen-ack", callback);
+    },
+    [],
+  );
 
-  const disconnectSocket = () => {
+  const offGroupSeenACK = useCallback(
+    (callback: (ack: GroupReceiptAck) => void) => {
+      socketRef.current?.off("group-message-seen-ack", callback);
+    },
+    [],
+  );
+
+  const onGroupNotification = useCallback(
+    (callback: (message: IGroupMessage) => void) => {
+      socketRef.current?.on("new-group-message-notification", callback);
+    },
+    [],
+  );
+
+  const offGroupNotification = useCallback(
+    (callback: (message: IGroupMessage) => void) => {
+      socketRef.current?.off("new-group-message-notification", callback);
+    },
+    [],
+  );
+
+  const disconnectSocket = useCallback(() => {
     socketRef.current?.disconnect();
-    socketInstance = null;
-  };
+  }, []);
 
   return {
+    socket,
     socketRef,
+    isConnected,
+
     sendMessage,
-    messageSeen,
     joinRoom,
     leaveRoom,
+    messageSeen,
     onMessage,
     offMessage,
     onSentACK,
+    offSentACK,
     onDeliveredACK,
+    offDeliveredACK,
     onSeenACK,
-    onNotification,
-    offNotification,
+    offSeenACK,
+
     sendGroupMessage,
     joinGroupRoom,
     leaveGroupRoom,
@@ -236,6 +349,9 @@ export const useSocket = (userId: string) => {
     offGroupSeenACK,
     onGroupNotification,
     offGroupNotification,
+
     disconnectSocket,
   };
 };
+
+export type SocketContextValue = ReturnType<typeof useSocket>;

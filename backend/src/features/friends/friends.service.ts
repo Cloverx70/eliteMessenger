@@ -16,6 +16,7 @@ import {
   NotificationCause,
   NotificationsService,
 } from '../notifications/notifications.service';
+import { S3Service } from '../../utils/s3/s3.service';
 
 @Injectable()
 export class FriendsService {
@@ -26,6 +27,7 @@ export class FriendsService {
     private readonly userRepo: Repository<User>,
     private readonly chatService: ChatService,
     private readonly notificationService: NotificationsService,
+    private readonly s3Service: S3Service,
   ) {}
 
   usersSelect = [
@@ -169,9 +171,6 @@ export class FriendsService {
         receiverFriendIds.has(friendId),
       ).length;
 
-      /*
-       * The mutual count is used only in the notification.
-       */
       const friendRequestReceivedNotification: CreateNotificationCauseInput = {
         cause: NotificationCause.FRIEND_REQUEST_RECEIVED,
         actorId: sid,
@@ -334,7 +333,9 @@ export class FriendsService {
       const search = searchQuery?.trim().toLowerCase();
 
       const applySearch = <T>(queryBuilder: SelectQueryBuilder<T>) => {
-        if (!search) return queryBuilder;
+        if (!search) {
+          return queryBuilder;
+        }
 
         return queryBuilder.andWhere(
           new Brackets((qb) => {
@@ -342,7 +343,15 @@ export class FriendsService {
               .orWhere('LOWER(u.firstname) LIKE :search')
               .orWhere('LOWER(u.lastname) LIKE :search')
               .orWhere(
-                `LOWER(CONCAT_WS(' ', u.firstname, u.lastname)) LIKE :search`,
+                `
+                LOWER(
+                  CONCAT_WS(
+                    ' ',
+                    u.firstname,
+                    u.lastname
+                  )
+                ) LIKE :search
+              `,
               );
           }),
           {
@@ -351,37 +360,49 @@ export class FriendsService {
         );
       };
 
+      /*
+       * Find all users who already have a relationship
+       * with the current user.
+       *
+       * This includes accepted and ongoing relationships,
+       * but excludes declined relationships.
+       */
       const friendRows = await this.friendsRepo
         .createQueryBuilder('f')
         .select(
           `
-        CASE
-          WHEN f.user1Id = :uid
-          THEN f.user2Id
-          ELSE f.user1Id
-        END
-        `,
+            CASE
+              WHEN f.user1Id = :uid
+              THEN f.user2Id
+              ELSE f.user1Id
+            END
+          `,
           'id',
         )
         .where(
           `
-        (
-          f.user1Id = :uid
-          OR f.user2Id = :uid
-        )
-        AND f.status != :status
-        `,
+            (
+              f.user1Id = :uid
+              OR f.user2Id = :uid
+            )
+            AND f.status != :status
+          `,
           {
             uid,
             status: FriendStatus.DECLINED,
           },
         )
-        .getRawMany<{ id: string }>();
+        .getRawMany<{
+          id: string;
+        }>();
 
       const friendIds = [...new Set(friendRows.map((friend) => friend.id))];
 
       /*
-       * No direct friends/relationships fallback.
+       * No relationships yet.
+       *
+       * Return users who do not already have any
+       * relationship row with the current user.
        */
       if (friendIds.length === 0) {
         const excludedIdsRaw = `
@@ -400,13 +421,19 @@ export class FriendsService {
           .createQueryBuilder('u')
           .select(this.usersSelect)
           .where(`u.id NOT IN (${excludedIdsRaw})`)
-          .andWhere('u.id != :uid', { uid })
-          .setParameters({ uid })
+          .andWhere('u.id != :uid', {
+            uid,
+          })
+          .setParameters({
+            uid,
+          })
           .limit(30);
 
         applySearch(queryBuilder);
 
         const fallbackUsers = await queryBuilder.getMany();
+
+        await this.hydrateUserProfilePictures(fallbackUsers);
 
         return {
           message: 'People you may know (no friends fallback)',
@@ -416,35 +443,43 @@ export class FriendsService {
       }
 
       /*
-       * Find accepted friends of the current user's friends.
+       * Find accepted friends of the current user's
+       * accepted/ongoing connections.
        */
       const mutualRows = await this.friendsRepo
         .createQueryBuilder('f')
         .select(
           `
-        CASE
-          WHEN f.user1Id IN (:...friendIds)
-          THEN f.user2Id
-          ELSE f.user1Id
-        END
-        `,
+            CASE
+              WHEN f.user1Id IN (:...friendIds)
+              THEN f.user2Id
+              ELSE f.user1Id
+            END
+          `,
           'id',
         )
         .where(
           `
-        (
-          f.user1Id IN (:...friendIds)
-          OR f.user2Id IN (:...friendIds)
-        )
-        AND f.status = :status
-        `,
+            (
+              f.user1Id IN (:...friendIds)
+              OR f.user2Id IN (:...friendIds)
+            )
+            AND f.status = :status
+          `,
           {
             friendIds,
             status: FriendStatus.ACCEPTED,
           },
         )
-        .getRawMany<{ id: string }>();
+        .getRawMany<{
+          id: string;
+        }>();
 
+      /*
+       * Exclude:
+       * - the current user
+       * - users already related to the current user
+       */
       const mutualIds = [
         ...new Set(
           mutualRows
@@ -454,13 +489,18 @@ export class FriendsService {
       ];
 
       /*
-       * No mutual connections fallback.
+       * No mutual connections.
+       *
+       * Return users who do not already have a
+       * non-declined relationship with the current user.
        */
       if (mutualIds.length === 0) {
         const queryBuilder = this.userRepo
           .createQueryBuilder('u')
           .select(this.usersSelect)
-          .where('u.id != :uid', { uid })
+          .where('u.id != :uid', {
+            uid,
+          })
           .andWhere('u.id NOT IN (:...friendIds)', {
             friendIds,
           })
@@ -470,6 +510,8 @@ export class FriendsService {
 
         const fallbackUsers = await queryBuilder.getMany();
 
+        await this.hydrateUserProfilePictures(fallbackUsers);
+
         return {
           message: 'People you may know (fallback)',
           code: 200,
@@ -478,7 +520,7 @@ export class FriendsService {
       }
 
       /*
-       * Return matching mutual connections.
+       * Return mutual connections.
        */
       const queryBuilder = this.userRepo
         .createQueryBuilder('u')
@@ -492,6 +534,8 @@ export class FriendsService {
 
       const peopleYouMayKnow = await queryBuilder.getMany();
 
+      await this.hydrateUserProfilePictures(peopleYouMayKnow);
+
       return {
         message: 'People you may know returned successfully',
         code: 200,
@@ -499,6 +543,7 @@ export class FriendsService {
       };
     } catch (error: any) {
       handleError(error);
+      throw error;
     }
   }
 
@@ -576,12 +621,24 @@ export class FriendsService {
 
   async GetSuggestedUsers(uid: string) {
     try {
+      /*
+       * Find every user who already has any relationship
+       * with the current user.
+       */
       const relationships = await this.friendsRepo
         .createQueryBuilder('f')
         .select(['f.user1Id', 'f.user2Id'])
-        .where('(f.user1Id = :uid OR f.user2Id = :uid)', {
-          uid,
-        })
+        .where(
+          `
+            (
+              f.user1Id = :uid
+              OR f.user2Id = :uid
+            )
+          `,
+          {
+            uid,
+          },
+        )
         .getMany();
 
       const relatedUserIds = [
@@ -601,46 +658,80 @@ export class FriendsService {
           uid,
         });
 
+      /*
+       * Do not suggest users who already have a
+       * relationship with the current user.
+       */
       if (relatedUserIds.length > 0) {
-        queryBuilder.andWhere('u.id NOT IN (:...relatedUserIds)', {
-          relatedUserIds,
-        });
+        queryBuilder.andWhere(
+          `
+          u.id NOT IN (
+            :...relatedUserIds
+          )
+        `,
+          {
+            relatedUserIds,
+          },
+        );
       }
 
+      /*
+       * Suggestion score:
+       *
+       * Online user       +15
+       * Has profile image  +4
+       * Created <= 7 days  +8
+       * Created <= 30 days +4
+       * Random variation   +0 to +5
+       */
       queryBuilder
         .addSelect(
           `
-        (
-          CASE
-            WHEN u.isActive = true THEN 15
-            ELSE 0
-          END
+          (
+            CASE
+              WHEN u.isActive = true
+              THEN 15
+              ELSE 0
+            END
 
-          +
+            +
 
-          CASE
-            WHEN u.userPfpUrl IS NOT NULL
-              AND u.userPfpUrl != ''
-            THEN 4
-            ELSE 0
-          END
+            CASE
+              WHEN
+                u.userPfpUrl IS NOT NULL
+                AND u.userPfpUrl != ''
+              THEN 4
+              ELSE 0
+            END
 
-          +
+            +
 
-          CASE
-            WHEN u.createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-            THEN 8
+            CASE
+              WHEN
+                u.createdAt >=
+                DATE_SUB(
+                  NOW(),
+                  INTERVAL 7 DAY
+                )
+              THEN 8
 
-            WHEN u.createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            THEN 4
+              WHEN
+                u.createdAt >=
+                DATE_SUB(
+                  NOW(),
+                  INTERVAL 30 DAY
+                )
+              THEN 4
 
-            ELSE 0
-          END
+              ELSE 0
+            END
 
-          +
+            +
 
-          (RAND() * 5)
-        )
+            (
+              RAND() * 5
+            )
+          )
         `,
           'suggestionScore',
         )
@@ -649,6 +740,12 @@ export class FriendsService {
 
       const suggestedUsers = await queryBuilder.getMany();
 
+      /*
+       * Convert every stored S3 key into a temporary
+       * signed URL before returning the response.
+       */
+      await this.hydrateUserProfilePictures(suggestedUsers);
+
       return {
         message: 'Suggested users returned successfully',
         code: 200,
@@ -656,6 +753,40 @@ export class FriendsService {
       };
     } catch (error: any) {
       handleError(error);
+      throw error;
     }
+  }
+
+  private async resolveProfilePictureUrl(
+    value?: string | null,
+  ): Promise<string | null> {
+    if (!value) {
+      return null;
+    }
+
+    // Google profile pictures, demo URLs, or already-resolved URLs.
+    if (/^https?:\/\//i.test(value)) {
+      return value;
+    }
+
+    // The database stores the permanent S3 key.
+    // The frontend receives a temporary signed URL.
+    const { url } = await this.s3Service.getFileUrl(value);
+
+    return url;
+  }
+
+  private async hydrateUserProfilePictures<
+    T extends {
+      userPfpUrl?: string | null;
+    },
+  >(users: T[]): Promise<T[]> {
+    await Promise.all(
+      users.map(async (user) => {
+        user.userPfpUrl = await this.resolveProfilePictureUrl(user.userPfpUrl);
+      }),
+    );
+
+    return users;
   }
 }

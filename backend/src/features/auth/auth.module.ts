@@ -6,6 +6,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
+import { S3Module } from '../../utils/s3/s3.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../database/entities/user.entity';
 import { UserModule } from '../user/user.module';
@@ -25,6 +26,7 @@ import { localStrategy } from './strategies/local.strategy';
     }),
     UserModule,
     EmailModule,
+    S3Module,
   ],
   controllers: [AuthController],
   providers: [AuthService, localStrategy, JwtStrategy, googleStrategy],

@@ -84,7 +84,7 @@ export interface NotificationItem {
 
   thumbnailUrl: string | null;
   target: NotificationTarget;
-
+  recepientId: string;
   isRead: boolean;
   readAt: string | null;
   createdAt: string;

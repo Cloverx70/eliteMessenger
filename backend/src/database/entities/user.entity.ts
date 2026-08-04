@@ -59,11 +59,11 @@ export class User {
   @Column({ type: 'enum', enum: ['google', 'local'] })
   accountRegisterType: 'google' | 'local';
 
-  @Column({ type: 'boolean', default: true })
-  isActive: boolean = true;
+  @Column({ type: 'boolean', default: false })
+  isActive: boolean = false;
 
-  @Column({ nullable: true })
-  lastSeen: Date;
+  @Column({ type: 'datetime', nullable: true })
+  lastSeen: Date | null;
 
   @Column({ type: 'boolean', default: false })
   isAccountLocked: boolean = false;

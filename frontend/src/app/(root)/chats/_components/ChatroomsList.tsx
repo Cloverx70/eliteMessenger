@@ -1,53 +1,37 @@
 "use client";
 
-import { getAgoTiming, useDebounce } from "@/app/constants";
-import { useChatStore } from "@/app/stores/ChatStore";
-import { useQuery } from "@tanstack/react-query";
 import { MessageCircleMore, UsersRound } from "lucide-react";
-import Image from "next/image";
+import { getAgoTiming, useDebounce } from "@/app/constants";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
 
-import { GetChatList } from "../action";
 import FIlterPills from "./FIlterPills";
+import { GetChatList } from "../action";
+import Image from "next/image";
 import SearchInput from "./SearchInput";
+import { useChatStore } from "@/app/stores/ChatStore";
+import { usePresenceStore } from "@/app/stores/PresenceStore";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 const ChatroomsList = () => {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] =
-    useState<"all" | "unread">("all");
+  const [filter, setFilter] = useState<"all" | "unread">("all");
 
-  const debouncedValue = useDebounce(
-    query,
-    300,
-  );
+  const debouncedValue = useDebounce(query, 300);
 
   const router = useRouter();
   const pathname = usePathname();
 
-  const clearUnread = useChatStore(
-    (state) => state.clearUnread,
-  );
+  const clearUnread = useChatStore((state) => state.clearUnread);
 
-  const {
-    data: chatrooms = [],
-    isLoading,
-  } = useQuery({
-    queryKey: [
-      "CHATROOMS",
-      debouncedValue,
-      filter,
-    ],
-    queryFn: () =>
-      GetChatList(
-        debouncedValue,
-        filter,
-      ),
+  const presenceByUserId = usePresenceStore((state) => state.presenceByUserId);
+
+  const { data: chatrooms = [], isLoading } = useQuery({
+    queryKey: ["CHATROOMS", debouncedValue, filter],
+    queryFn: () => GetChatList(debouncedValue, filter),
   });
 
-  const handleChatroomNavigation = (
-    chatroomId: string,
-  ) => {
+  const handleChatroomNavigation = (chatroomId: string) => {
     clearUnread(chatroomId);
     router.push(`/chats/${chatroomId}`);
   };
@@ -77,15 +61,9 @@ const ChatroomsList = () => {
       </header>
 
       <div className="shrink-0 space-y-4 px-4 py-4 sm:px-5">
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-        />
+        <SearchInput value={query} onChange={setQuery} />
 
-        <FIlterPills
-          filter={filter}
-          onChange={setFilter}
-        />
+        <FIlterPills filter={filter} onChange={setFilter} />
       </div>
 
       <div
@@ -108,39 +86,30 @@ const ChatroomsList = () => {
         ) : chatrooms.length > 0 ? (
           <div className="space-y-1">
             {chatrooms.map((room) => {
-              const activePath =
-                `/chats/${room.id}`;
+              const activePath = `/chats/${room.id}`;
 
               const title =
                 room.recUsername ||
-                `${room.recFirstname ?? ""} ${
-                  room.recLastname ?? ""
-                }`.trim() ||
+                `${room.recFirstname ?? ""} ${room.recLastname ?? ""}`.trim() ||
                 "Elite user";
 
               const unreadCount =
-                room.unreadCount ??
-                room.unreadMessages?.length ??
-                0;
+                room.unreadMessages.length ?? room.unreadMessages?.length ?? 0;
+
+              const livePresence = presenceByUserId[room.recId];
+
+              const recipientIsActive =
+                livePresence?.isActive ?? Boolean(room.recIsActive);
 
               const lastMessage =
-                room.lastMessage ||
-                "Say hi to your new friend";
+                room.lastMessage || "Say hi to your new friend";
 
               return (
                 <button
                   type="button"
                   key={room.id}
-                  aria-current={
-                    pathname === activePath
-                      ? "page"
-                      : undefined
-                  }
-                  onClick={() =>
-                    handleChatroomNavigation(
-                      room.id,
-                    )
-                  }
+                  aria-current={pathname === activePath ? "page" : undefined}
+                  onClick={() => handleChatroomNavigation(room.id)}
                   className={`
                     flex
                     min-h-[76px]
@@ -165,9 +134,7 @@ const ChatroomsList = () => {
                     <div className="relative h-11 w-11 shrink-0">
                       {room.recUserPfpUrl ? (
                         <Image
-                          src={
-                            room.recUserPfpUrl
-                          }
+                          src={room.recUserPfpUrl}
                           alt={`${title} avatar`}
                           fill
                           sizes="44px"
@@ -186,9 +153,7 @@ const ChatroomsList = () => {
                             text-elitePurple
                           "
                         >
-                          <UsersRound
-                            size={20}
-                          />
+                          <UsersRound size={20} />
                         </div>
                       )}
 
@@ -204,7 +169,7 @@ const ChatroomsList = () => {
                           border-white
                           dark:border-customBlack
                           ${
-                            room.recIsActive
+                            recipientIsActive
                               ? "bg-emerald-500"
                               : "bg-slate-400"
                           }
@@ -226,11 +191,7 @@ const ChatroomsList = () => {
                   <div className="flex shrink-0 flex-col items-end gap-2">
                     <p className="whitespace-nowrap text-[10px] font-bold text-slate-500 dark:text-slate-400">
                       {room.lastMessageDate
-                        ? getAgoTiming(
-                            new Date(
-                              room.lastMessageDate,
-                            ),
-                          )
+                        ? getAgoTiming(new Date(room.lastMessageDate))
                         : ""}
                     </p>
 
@@ -250,9 +211,7 @@ const ChatroomsList = () => {
                           text-white
                         "
                       >
-                        {unreadCount > 99
-                          ? "99+"
-                          : unreadCount}
+                        {unreadCount > 99 ? "99+" : unreadCount}
                       </span>
                     ) : null}
                   </div>
@@ -274,9 +233,7 @@ const ChatroomsList = () => {
                 text-elitePurple
               "
             >
-              <MessageCircleMore
-                size={24}
-              />
+              <MessageCircleMore size={24} />
             </span>
 
             <p className="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">

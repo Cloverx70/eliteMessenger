@@ -3,8 +3,10 @@ import {
   GetProfileByUsername,
   UpdateMyProfile,
 } from "../(root)/profile/action";
-import { ProfileScreenData, UpdateProfileInput } from "../(root)/profile/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { UpdateProfileInput } from "../(root)/profile/types";
+import { useRouter } from "next/navigation";
 
 export const profileKeys = {
   all: ["PROFILE"] as const,
@@ -31,24 +33,48 @@ export function useProfileByUsername(username: string) {
 
 export function useUpdateMyProfile() {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   return useMutation({
-    mutationFn: (input: UpdateProfileInput) => UpdateMyProfile(input),
+    mutationKey: ["UPDATE_MY_PROFILE"],
 
-    onSuccess: (updatedProfile) => {
-      queryClient.setQueryData<ProfileScreenData>(
-        profileKeys.me(),
-        updatedProfile,
-      );
+    mutationFn: (input: UpdateProfileInput) => {
+      return UpdateMyProfile(input);
+    },
 
-      queryClient.setQueryData<ProfileScreenData>(
-        profileKeys.user(updatedProfile.user.username),
-        updatedProfile,
-      );
+    onSuccess: async (updatedProfile) => {
+      queryClient.setQueryData(["MY_PROFILE"], updatedProfile);
 
-      void queryClient.invalidateQueries({
-        queryKey: profileKeys.all,
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["MY_PROFILE"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["STATUS"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["PROFILE"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["CHATROOMS"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["GROUPS"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["POSTS"],
+        }),
+
+        queryClient.invalidateQueries({
+          queryKey: ["NOTIFICATIONS"],
+        }),
+      ]);
+      router.refresh();
     },
   });
 }

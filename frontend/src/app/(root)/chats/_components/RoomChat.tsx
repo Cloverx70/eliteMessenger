@@ -1,10 +1,12 @@
 "use client";
 
-import {
+import type {
   DirectDeliveredAck,
   DirectSentAck,
-  useSocket,
 } from "@/app/hooks/useSocket";
+import { useSocketContext } from "@/app/providers/SocketProvider";
+import { usePresenceStore } from "@/app/stores/PresenceStore";
+import { getAgoTiming } from "@/app/constants";
 import { useChatStore } from "@/app/stores/ChatStore";
 import { IUser } from "@/app/auth/actions";
 import {
@@ -56,6 +58,10 @@ const RoomChat = ({
     (state) => state.clearUnread,
   );
 
+  const presenceByUserId = usePresenceStore(
+    (state) => state.presenceByUserId,
+  );
+
   const {
     joinRoom,
     leaveRoom,
@@ -66,7 +72,7 @@ const RoomChat = ({
     onSeenACK,
     messageSeen,
     socketRef,
-  } = useSocket(user.id);
+  } = useSocketContext();
 
   const {
     data: ChatroomAndMessages,
@@ -321,6 +327,28 @@ const RoomChat = ({
   const chatroom =
     ChatroomAndMessages.chatroom;
 
+  const livePresence =
+    presenceByUserId[chatroom.recId];
+
+  const recipientIsActive =
+    livePresence?.isActive ??
+    Boolean(chatroom.recIsActive);
+
+  const recipientLastSeen =
+    livePresence?.lastSeen ??
+    (chatroom.recLastSeen
+      ? String(chatroom.recLastSeen)
+      : null);
+
+  const recipientPresenceLabel =
+    recipientIsActive
+      ? "Online"
+      : recipientLastSeen
+        ? `Last seen ${getAgoTiming(
+            new Date(recipientLastSeen),
+          )}`
+        : "Offline";
+
   const recipientName =
     chatroom.recUsername ||
     `${chatroom.recFirstname ?? ""} ${
@@ -426,7 +454,7 @@ const RoomChat = ({
                 border-white
                 dark:border-customBlack
                 ${
-                  chatroom.recIsActive
+                  recipientIsActive
                     ? "bg-emerald-500"
                     : "bg-slate-400"
                 }
@@ -440,9 +468,7 @@ const RoomChat = ({
             </h1>
 
             <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
-              {chatroom.recIsActive
-                ? "Online"
-                : "Offline"}
+              {recipientPresenceLabel}
             </p>
           </div>
         </div>

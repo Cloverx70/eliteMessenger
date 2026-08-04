@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
@@ -21,7 +22,7 @@ import { updateMessageDto } from './dtos/updateMessage.dto';
 import { updateMessageStatusDto } from './dtos/updateMessageStatus.dto';
 
 @Injectable()
-export class ChatService {
+export class ChatService implements OnModuleInit {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
@@ -37,6 +38,26 @@ export class ChatService {
 
     private readonly s3Service: S3Service,
   ) {}
+
+  /**
+   * The in-memory Socket.IO presence map is cleared whenever Nest restarts.
+   * Reset stale database flags before the server begins accepting traffic.
+   */
+  async onModuleInit(): Promise<void> {
+    const now = new Date();
+
+    await this.userRepo
+      .createQueryBuilder()
+      .update(User)
+      .set({
+        isActive: false,
+        lastSeen: now,
+      })
+      .where('isActive = :isActive', {
+        isActive: true,
+      })
+      .execute();
+  }
 
   usersSelect = [
     'user1.id',
@@ -55,17 +76,63 @@ export class ChatService {
     'cr.lastMessage',
   ];
 
-  private safeUser(user?: User | null) {
-    if (!user) return null;
+  /**
+   * Converts a stored profile-picture S3 key into a temporary URL.
+   *
+   * External/demo URLs are already usable, so they are returned unchanged.
+   * This method never saves anything to the database.
+   */
+  private async resolveProfilePictureUrl(
+    value?: string | null,
+  ): Promise<string | null> {
+    if (!value) {
+      return null;
+    }
+
+    if (/^https?:\/\//i.test(value)) {
+      return value;
+    }
+
+    const { url } = await this.s3Service.getFileUrl(value);
+
+    return url;
+  }
+
+  /**
+   * Replaces user.userPfpUrl only on the in-memory entity.
+   *
+   * The database still keeps the permanent S3 key because no repository
+   * save/update call is made here.
+   */
+  private async hydrateUserPfp(user?: User | null): Promise<User | null> {
+    if (!user) {
+      return null;
+    }
+
+    const resolvedUrl = await this.resolveProfilePictureUrl(user.userPfpUrl);
+
+    if (resolvedUrl) {
+      user.userPfpUrl = resolvedUrl;
+    }
+
+    return user;
+  }
+
+  private async safeUser(user?: User | null) {
+    const hydratedUser = await this.hydrateUserPfp(user);
+
+    if (!hydratedUser) {
+      return null;
+    }
 
     return {
-      id: user.id,
-      username: user.username,
-      firstname: user.firstname,
-      lastname: user.lastname,
-      userPfpUrl: user.userPfpUrl ?? null,
-      isActive: user.isActive,
-      lastSeen: user.lastSeen ?? null,
+      id: hydratedUser.id,
+      username: hydratedUser.username,
+      firstname: hydratedUser.firstname,
+      lastname: hydratedUser.lastname,
+      userPfpUrl: hydratedUser.userPfpUrl ?? null,
+      isActive: hydratedUser.isActive,
+      lastSeen: hydratedUser.lastSeen ?? null,
     };
   }
 
@@ -136,7 +203,7 @@ export class ChatService {
       shareCount: post.shareCount,
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
-      author: this.safeUser(post.author),
+      author: await this.safeUser(post.author),
       attachments,
     };
   }
@@ -162,7 +229,7 @@ export class ChatService {
       message: message.message ?? '',
       chatroomId: message.chatroomId,
       sid: message.sid ?? null,
-      sender: this.safeUser(message.sender),
+      sender: await this.safeUser(message.sender),
       attachments,
       sharedPostId: message.sharedPostId ?? null,
       sharedPost: await this.serializeSharedPost(message.sharedPost),
@@ -219,10 +286,29 @@ export class ChatService {
 
       const savedChatroom = await this.chatRoomRepo.save(chatroom);
 
+      const completeChatroom = await this.chatRoomRepo.findOne({
+        where: {
+          id: savedChatroom.id,
+        },
+        relations: {
+          user1: true,
+          user2: true,
+        },
+      });
+
+      if (!completeChatroom) {
+        throw new NotFoundException('Saved chat room was not found');
+      }
+
+      await Promise.all([
+        this.hydrateUserPfp(completeChatroom.user1),
+        this.hydrateUserPfp(completeChatroom.user2),
+      ]);
+
       return {
         message: 'Chat room created successfully',
         code: 201,
-        data: savedChatroom,
+        data: completeChatroom,
       };
     } catch (error: any) {
       handleError(error);
@@ -477,6 +563,14 @@ export class ChatService {
         .setParameter('uid', uid)
         .getRawOne();
 
+      if (!chatroom) {
+        throw new NotFoundException('Chat room not found');
+      }
+
+      chatroom.recUserPfpUrl = await this.resolveProfilePictureUrl(
+        chatroom.recUserPfpUrl,
+      );
+
       const [messages, total] = await this.messageRepo.findAndCount({
         where: {
           chatroomId: crid,
@@ -583,6 +677,14 @@ export class ChatService {
         .orderBy('cr.lastMessageDate', 'DESC')
         .addOrderBy('cr.createdAt', 'DESC')
         .getRawMany();
+
+      await Promise.all(
+        chatrooms.map(async (room) => {
+          room.recUserPfpUrl = await this.resolveProfilePictureUrl(
+            room.recUserPfpUrl,
+          );
+        }),
+      );
 
       if (chatrooms.length === 0) {
         return {
@@ -731,6 +833,14 @@ export class ChatService {
         .setParameter('uid', uid)
         .getRawOne();
 
+      if (!chatroom) {
+        throw new NotFoundException('Chat room not found');
+      }
+
+      chatroom.recUserPfpUrl = await this.resolveProfilePictureUrl(
+        chatroom.recUserPfpUrl,
+      );
+
       const messages = await this.messageRepo.find({
         where: {
           chatroomId: crid,
@@ -782,15 +892,23 @@ export class ChatService {
   }
 
   async updateUserActivity(userId: string, active: boolean) {
+    const lastSeen = active ? null : new Date();
+
     await this.userRepo.update(
       {
         id: userId,
       },
       {
         isActive: active,
-        lastSeen: active ? null : new Date(),
+        lastSeen,
       },
     );
+
+    return {
+      userId,
+      isActive: active,
+      lastSeen: lastSeen?.toISOString() ?? null,
+    };
   }
 
   async markMessagesDelivered(uid: string) {

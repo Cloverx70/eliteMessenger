@@ -1,62 +1,37 @@
+///////////
+
 "use client";
 
-import {
-  useEffect,
-  useState,
-} from "react";
-import {
-  ArrowLeft,
-  Info,
-  Search,
-  UsersRound,
-} from "lucide-react";
-import Image from "next/image";
-import {
-  useParams,
-  useRouter,
-} from "next/navigation";
-import {
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { GetGroupAndMessages, IGroupMessage } from "../../groups/group-action";
+import React, { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { BsThreeDotsVertical } from "react-icons/bs";
-
-import { IUser } from "@/app/auth/actions";
-import Spinner from "@/app/components/spinner";
-import { useChatStore } from "@/app/stores/ChatStore";
-import { useSocket } from "@/app/hooks/useSocket";
-
-import {
-  GetGroupAndMessages,
-  IGroupMessage,
-} from "../group-action";
+import { CiSearch } from "react-icons/ci";
 import GroupMessage from "./GroupMessage";
 import GroupSendInput from "./GroupSendInput";
+import { IUser } from "@/app/auth/actions";
+import Image from "next/image";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import Spinner from "@/app/components/spinner";
+import { UsersRound } from "lucide-react";
+import { useChatStore } from "@/app/stores/ChatStore";
+import { useParams } from "next/navigation";
+import { useSocketContext } from "@/app/providers/SocketProvider";
 
 type GroupRoomChatProps = {
   user: IUser;
 };
 
-const GroupRoomChat = ({
-  user,
-}: GroupRoomChatProps) => {
+const GroupRoomChat = ({ user }: GroupRoomChatProps) => {
   const params = useParams();
-  const router = useRouter();
-  const queryClient =
-    useQueryClient();
-
+  const queryClient = useQueryClient();
   const rawGroupId = params.gid;
+  const groupId = Array.isArray(rawGroupId)
+    ? rawGroupId[0]
+    : (rawGroupId ?? "");
 
-  const groupId =
-    Array.isArray(rawGroupId)
-      ? rawGroupId[0]
-      : (rawGroupId ?? "");
-
-  const clearGroupUnread =
-    useChatStore(
-      (state) =>
-        state.clearGroupUnread,
-    );
+  const clearGroupUnread = useChatStore((state) => state.clearGroupUnread);
 
   const {
     socketRef,
@@ -71,250 +46,123 @@ const GroupRoomChat = ({
     offGroupDeliveredACK,
     onGroupSeenACK,
     offGroupSeenACK,
-  } = useSocket(user.id);
+  } = useSocketContext();
 
   const {
     data: groupAndMessages,
     isLoading,
     isPending,
   } = useQuery({
-    queryKey: [
-      "GROUP_AND_MESSAGES",
-      groupId,
-    ],
-    queryFn: () =>
-      GetGroupAndMessages(
-        groupId,
-        200,
-        1,
-      ),
+    queryKey: ["GROUP_AND_MESSAGES", groupId],
+    queryFn: () => GetGroupAndMessages(groupId, 200, 1),
     enabled: Boolean(groupId),
   });
 
-  const [
-    messages,
-    setMessages,
-  ] = useState<IGroupMessage[]>(
-    [],
-  );
+  const [messages, setMessages] = useState<IGroupMessage[]>([]);
 
   useEffect(() => {
-    if (
-      groupAndMessages?.groupMessages
-    ) {
-      setMessages(
-        groupAndMessages.groupMessages,
-      );
+    if (groupAndMessages?.groupMessages) {
+      setMessages(groupAndMessages.groupMessages);
     }
   }, [groupAndMessages]);
 
   useEffect(() => {
     if (!groupId) return;
-
     clearGroupUnread(groupId);
-
-    queryClient.invalidateQueries({
-      queryKey: [
-        "GROUP_INFO",
-        groupId,
-      ],
-    });
-  }, [
-    clearGroupUnread,
-    groupId,
-    queryClient,
-  ]);
+  }, [clearGroupUnread, groupId]);
 
   useEffect(() => {
-    if (!groupId || !user.id) {
-      return;
-    }
+    if (!groupId || !user.id) return;
 
-    joinGroupRoom(
-      groupId,
-      user.id,
-    );
+    joinGroupRoom(groupId, user.id);
 
     return () => {
-      leaveGroupRoom(
-        groupId,
-        user.id,
-      );
+      leaveGroupRoom(groupId, user.id);
     };
-  }, [
-    groupId,
-    user.id,
-    joinGroupRoom,
-    leaveGroupRoom,
-  ]);
+    // Socket helpers use the singleton socket and are intentionally scoped by ID.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, user.id]);
 
   useEffect(() => {
-    if (
-      !groupId ||
-      !groupAndMessages
-        ?.groupMessages
-    ) {
-      return;
-    }
+    if (!groupId || !groupAndMessages?.groupMessages) return;
 
-    groupMessagesSeen(
-      groupId,
-      user.id,
-    );
-
+    groupMessagesSeen(groupId, user.id);
     clearGroupUnread(groupId);
-
-    queryClient.invalidateQueries({
-      queryKey: ["GROUPS"],
-    });
-  }, [
-    groupId,
-    groupAndMessages?.groupMessages,
-    user.id,
-    groupMessagesSeen,
-    clearGroupUnread,
-    queryClient,
-  ]);
+    queryClient.invalidateQueries({ queryKey: ["GROUPS"] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, groupAndMessages?.groupMessages, user.id]);
 
   useEffect(() => {
-    const socket =
-      socketRef.current;
+    const socket = socketRef.current;
+    if (!socket || !groupId) return;
 
-    if (!socket || !groupId) {
-      return;
-    }
-
-    const handleSentAck = (
-      ack: {
-        tempId: string;
-        message: IGroupMessage;
-      },
-    ) => {
+    const handleSentAck = (ack: { tempId: string; message: IGroupMessage }) => {
       setMessages((previous) =>
         previous.map((message) =>
-          message.id ===
-            ack.tempId ||
-          message.tempId ===
-            ack.tempId
+          message.id === ack.tempId || message.tempId === ack.tempId
             ? {
                 ...ack.message,
-                tempId:
-                  ack.tempId,
+                tempId: ack.tempId,
               }
             : message,
         ),
       );
 
+      queryClient.invalidateQueries({ queryKey: ["GROUPS"] });
       queryClient.invalidateQueries({
-        queryKey: ["GROUPS"],
-      });
-
-      queryClient.invalidateQueries({
-        queryKey: [
-          "GROUP_INFO",
-          groupId,
-        ],
+        queryKey: ["GROUP_INFO", groupId],
       });
     };
 
-    const handleNewMessage = (
-      message: IGroupMessage,
-    ) => {
-      if (
-        message.senderId ===
-        user.id
-      ) {
-        return;
-      }
-
-      if (
-        message.groupId !==
-        groupId
-      ) {
-        return;
-      }
+    const handleNewMessage = (message: IGroupMessage) => {
+      if (message.senderId === user.id) return;
+      if (message.groupId !== groupId) return;
 
       setMessages((previous) => {
-        const exists =
-          previous.some(
-            (current) =>
-              current.id ===
-                message.id ||
-              (message.tempId &&
-                current.tempId ===
-                  message.tempId),
-          );
+        const exists = previous.some(
+          (current) =>
+            current.id === message.id ||
+            (message.tempId && current.tempId === message.tempId),
+        );
 
         if (exists) {
-          return previous.map(
-            (current) =>
-              current.id ===
-                message.id ||
-              (message.tempId &&
-                current.tempId ===
-                  message.tempId)
-                ? {
-                    ...current,
-                    ...message,
-                  }
-                : current,
+          return previous.map((current) =>
+            current.id === message.id ||
+            (message.tempId && current.tempId === message.tempId)
+              ? { ...current, ...message }
+              : current,
           );
         }
 
-        return [
-          ...previous,
-          message,
-        ];
+        return [...previous, message];
       });
 
-      groupMessagesSeen(
-        groupId,
-        user.id,
-      );
-
+      groupMessagesSeen(groupId, user.id);
       clearGroupUnread(groupId);
-
-      queryClient.invalidateQueries({
-        queryKey: ["GROUPS"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["GROUPS"] });
     };
 
-    const handleReceiptAck = (
-      ack: {
-        messageId: string;
-        groupId: string;
-        totalRecipients: number;
-        deliveredCount: number;
-        seenCount: number;
-        status:
-          | "sent"
-          | "delivered"
-          | "seen";
-      },
-    ) => {
-      if (
-        ack.groupId !== groupId
-      ) {
-        return;
-      }
+    const handleReceiptAck = (ack: {
+      messageId: string;
+      groupId: string;
+      totalRecipients: number;
+      deliveredCount: number;
+      seenCount: number;
+      status: "sent" | "delivered" | "seen";
+    }) => {
+      if (ack.groupId !== groupId) return;
 
       setMessages((previous) =>
         previous.map((message) =>
-          message.id ===
-          ack.messageId
+          message.id === ack.messageId
             ? {
                 ...message,
-                status:
-                  ack.status,
+                status: ack.status,
                 receiptSummary: {
-                  totalRecipients:
-                    ack.totalRecipients,
-                  deliveredCount:
-                    ack.deliveredCount,
-                  seenCount:
-                    ack.seenCount,
-                  status:
-                    ack.status,
+                  totalRecipients: ack.totalRecipients,
+                  deliveredCount: ack.deliveredCount,
+                  seenCount: ack.seenCount,
+                  status: ack.status,
                 },
               }
             : message,
@@ -322,55 +170,21 @@ const GroupRoomChat = ({
       );
     };
 
-    onGroupSentACK(
-      handleSentAck,
-    );
-    onGroupMessage(
-      handleNewMessage,
-    );
-    onGroupDeliveredACK(
-      handleReceiptAck,
-    );
-    onGroupSeenACK(
-      handleReceiptAck,
-    );
+    onGroupSentACK(handleSentAck);
+    onGroupMessage(handleNewMessage);
+    onGroupDeliveredACK(handleReceiptAck);
+    onGroupSeenACK(handleReceiptAck);
 
     return () => {
-      offGroupSentACK(
-        handleSentAck,
-      );
-      offGroupMessage(
-        handleNewMessage,
-      );
-      offGroupDeliveredACK(
-        handleReceiptAck,
-      );
-      offGroupSeenACK(
-        handleReceiptAck,
-      );
+      offGroupSentACK(handleSentAck);
+      offGroupMessage(handleNewMessage);
+      offGroupDeliveredACK(handleReceiptAck);
+      offGroupSeenACK(handleReceiptAck);
     };
-  }, [
-    groupId,
-    user.id,
-    queryClient,
-    socketRef,
-    groupMessagesSeen,
-    clearGroupUnread,
-    onGroupSentACK,
-    offGroupSentACK,
-    onGroupMessage,
-    offGroupMessage,
-    onGroupDeliveredACK,
-    offGroupDeliveredACK,
-    onGroupSeenACK,
-    offGroupSeenACK,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, user.id]);
 
-  if (
-    isLoading ||
-    isPending ||
-    !groupAndMessages?.group
-  ) {
+  if (isLoading || isPending || !groupAndMessages?.group) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <Spinner />
@@ -378,236 +192,59 @@ const GroupRoomChat = ({
     );
   }
 
-  const group =
-    groupAndMessages.group;
+  const group = groupAndMessages.group;
 
   return (
-    <div
-      className="
-        flex
-        h-full
-        min-h-0
-        w-full
-        min-w-0
-        flex-col
-        overflow-hidden
-        bg-white
-        dark:bg-customBlack
-      "
-    >
-      <header
-        className="
-          z-10
-          flex
-          h-16
-          shrink-0
-          items-center
-          justify-between
-          gap-3
-          border-b
-          border-slate-200
-          bg-white
-          px-2
-          dark:border-slate-800
-          dark:bg-customBlack
-          sm:px-4
-        "
-      >
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <button
-            type="button"
-            aria-label="Back to groups"
-            onClick={() =>
-              router.push("/groups")
-            }
-            className="
-              flex
-              h-11
-              w-11
-              shrink-0
-              items-center
-              justify-center
-              rounded-full
-              text-slate-600
-              transition
-              hover:bg-slate-100
-              dark:text-slate-300
-              dark:hover:bg-slate-900
-              md:hidden
-            "
-          >
-            <ArrowLeft size={21} />
-          </button>
-
-          <div className="relative h-10 w-10 shrink-0">
-            {group.imageUrl ? (
-              <Image
-                src={group.imageUrl}
-                alt={`${group.name} avatar`}
-                fill
-                sizes="40px"
-                className="rounded-full object-cover"
-              />
-            ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-elitePurple/10 text-elitePurple">
-                <UsersRound size={20} />
-              </div>
-            )}
-          </div>
-
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-black text-slate-900 dark:text-white sm:text-base">
-              {group.name}
-            </h1>
-
-            <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
-              {group.memberCount}{" "}
-              {group.memberCount === 1
-                ? "member"
-                : "members"}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center">
-          <button
-            type="button"
-            aria-label="Search this group"
-            className="
-              hidden
-              h-11
-              w-11
-              items-center
-              justify-center
-              rounded-full
-              text-slate-500
-              transition
-              hover:bg-slate-100
-              dark:hover:bg-slate-900
-              sm:flex
-            "
-          >
-            <Search size={20} />
-          </button>
-
-          <button
-            type="button"
-            aria-label="Open group details"
-            onClick={() => {
-              window.dispatchEvent(
-                new Event(
-                  "open-group-profile",
-                ),
-              );
-            }}
-            className="
-              flex
-              h-11
-              w-11
-              items-center
-              justify-center
-              rounded-full
-              text-slate-500
-              transition
-              hover:bg-slate-100
-              dark:hover:bg-slate-900
-              xl:hidden
-            "
-          >
-            <Info size={20} />
-          </button>
-
-          <button
-            type="button"
-            aria-label="Group options"
-            className="
-              flex
-              h-11
-              w-11
-              items-center
-              justify-center
-              rounded-full
-              text-slate-500
-              transition
-              hover:bg-slate-100
-              dark:hover:bg-slate-900
-            "
-          >
-            <BsThreeDotsVertical
-              size={20}
+    <div className="flex h-full w-full flex-col border-r">
+      <div className="z-10 flex items-center justify-between gap-5 px-4 py-3">
+        <div className="flex items-center justify-start gap-4">
+          {group.imageUrl ? (
+            <Image
+              src={group.imageUrl}
+              alt={`${group.name} avatar`}
+              fill
+              sizes="40px"
+              className="rounded-full object-cover"
             />
-          </button>
-        </div>
-      </header>
-
-      <section
-        className="
-          min-h-0
-          flex-1
-          overflow-y-auto
-          overflow-x-hidden
-          overscroll-contain
-          bg-slate-50/70
-          px-3
-          py-4
-          dark:bg-slate-950/40
-          sm:px-5
-        "
-      >
-        {messages.length > 0 ? (
-          <div className="flex min-w-0 flex-col gap-2">
-            {messages.map(
-              (
-                message,
-                index,
-                allMessages,
-              ) => (
-                <GroupMessage
-                  key={message.id}
-                  message={message}
-                  isSender={
-                    message.senderId ===
-                    user.id
-                  }
-                  isLast={
-                    index ===
-                    allMessages.length -
-                      1
-                  }
-                />
-              ),
-            )}
-          </div>
-        ) : (
-          <div className="flex h-full min-h-48 items-center justify-center text-center">
-            <p className="max-w-xs text-sm font-semibold text-slate-400">
-              No messages yet. Start
-              the group conversation.
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-elitePurple/10 text-elitePurple">
+              <UsersRound size={19} />
+            </div>
+          )}
+          <div>
+            <h1 className="text-lg font-bold text-customBlack">{group.name}</h1>
+            <p className="text-xs text-slate-500">
+              {group.memberCount}{" "}
+              {group.memberCount === 1 ? "member" : "members"}
             </p>
           </div>
-        )}
-      </section>
+        </div>
 
-      <footer
-        className="
-          shrink-0
-          border-t
-          border-slate-200
-          bg-white
-          px-2
-          pb-[max(0.75rem,env(safe-area-inset-bottom))]
-          pt-3
-          dark:border-slate-800
-          dark:bg-customBlack
-          sm:px-4
-        "
-      >
-        <GroupSendInput
-          user={user}
-          group={group}
-          setMessages={setMessages}
-        />
-      </footer>
+        <div className="flex items-center justify-center gap-2">
+          <CiSearch size={25} className="cursor-pointer text-slate-500" />
+          <BsThreeDotsVertical
+            size={23}
+            className="cursor-pointer text-slate-500"
+          />
+        </div>
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1 px-5 py-2">
+        <div className="flex flex-col gap-2">
+          {messages.map((message, index, array) => (
+            <GroupMessage
+              key={message.id}
+              message={message}
+              isSender={message.senderId === user.id}
+              isLast={index === array.length - 1}
+            />
+          ))}
+        </div>
+      </ScrollArea>
+
+      <div className="px-4 py-4">
+        <GroupSendInput user={user} group={group} setMessages={setMessages} />
+      </div>
     </div>
   );
 };
