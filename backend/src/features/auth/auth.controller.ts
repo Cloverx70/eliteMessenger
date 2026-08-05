@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  Body,
   Controller,
   Get,
   Post,
@@ -12,30 +11,42 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Body,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import * as cookie from 'cookie';
 
-import { AuthService } from './auth.service';
-import { LoginUserDto } from './dtos/loginUser.dto';
 import { RegisterUserDto } from './dtos/registerUser.dto';
 import { ResetPasswordDto } from './dtos/resetPassword.dto';
 import { GoogleGuard } from './guards/google.guard';
 import { JwtGuard } from './guards/jwt.guard';
 import { LocalGuard } from './guards/local.guard';
+import { AuthService } from './auth.service';
 
 const AUTH_COOKIE_NAME = 'ELITE_ERA_AUTH_TOKEN';
 const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
+type LocalAuthRequest = Request & {
+  user?: string;
+};
+
+type GoogleAuthRequest = Request & {
+  user?: {
+    token?: string;
+  };
+};
+
 function getAuthCookieOptions(): cookie.SerializeOptions {
   const isProduction = process.env.NODE_ENV === 'production';
+  const configuredDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
 
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
     path: '/',
+    ...(configuredDomain ? { domain: configuredDomain } : {}),
   };
 }
 
@@ -52,16 +63,16 @@ export class AuthController {
 
   @Get('status')
   @UseGuards(JwtGuard)
-  async status(@Req() req: Request) {
+  status(@Req() req: Request) {
     return req.user;
   }
 
   @Post('login')
   @UseGuards(LocalGuard)
-  async login(@Body() loginUserDto: LoginUserDto, @Res() res: Response) {
-    const token = await this.authService.validate(loginUserDto);
+  login(@Req() req: LocalAuthRequest, @Res() res: Response) {
+    const token = req.user;
 
-    if (!token) {
+    if (!token || typeof token !== 'string') {
       throw new UnauthorizedException('Unable to create authentication token');
     }
 
@@ -71,7 +82,7 @@ export class AuthController {
     );
 
     return res.status(200).json({
-      message: 'logged in successfully',
+      message: 'Logged in successfully',
     });
   }
 
@@ -84,7 +95,7 @@ export class AuthController {
 
     if (!registerResponse || registerResponse.code !== 201) {
       throw new BadRequestException(
-        'error registering user, please try again later',
+        'Error registering user. Please try again later.',
       );
     }
 
@@ -93,16 +104,19 @@ export class AuthController {
     });
   }
 
-  @Post('google-login')
-  async google() {}
+  @Get('google')
+  @UseGuards(GoogleGuard)
+  googleAuth() {
+    return;
+  }
 
   @Get('google/redirect')
   @UseGuards(GoogleGuard)
-  async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-    const token = req.token;
+  googleAuthRedirect(@Req() req: GoogleAuthRequest, @Res() res: Response) {
+    const token = req.user?.token;
 
     if (!token) {
-      throw new UnauthorizedException('error validating');
+      throw new UnauthorizedException('Unable to validate Google account');
     }
 
     res.setHeader(
@@ -110,7 +124,7 @@ export class AuthController {
       cookie.serialize(AUTH_COOKIE_NAME, token, getAuthCookieOptions()),
     );
 
-    const frontBaseUrl = process.env.FRONT_BASE_URL;
+    const frontBaseUrl = process.env.FRONT_BASE_URL?.replace(/\/+$/, '');
 
     if (!frontBaseUrl) {
       throw new BadRequestException('FRONT_BASE_URL is not configured');

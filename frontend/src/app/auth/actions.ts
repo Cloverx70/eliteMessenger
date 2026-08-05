@@ -1,4 +1,5 @@
 import { AxiosResponse } from "axios";
+
 import { handleError } from "../constants";
 import ServerEndpoint from "@/lib/server-endpoint";
 
@@ -25,6 +26,16 @@ export interface Response {
   data?: string;
 }
 
+export function getGoogleLoginUrl(): string {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, "");
+
+  if (!apiUrl) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+  }
+
+  return `${apiUrl}/auth/google`;
+}
+
 export async function login(email: string, password: string) {
   try {
     const res: AxiosResponse<Response> = await ServerEndpoint.post(
@@ -33,13 +44,16 @@ export async function login(email: string, password: string) {
         email,
         password,
       },
-      { withCredentials: true }
+      { withCredentials: true },
     );
 
-    if (res.status !== 200)
+    if (res.status !== 200) {
       throw new Error(
-        res.data.message || "Something went wrong while loggin in"
+        res.data.message || "Something went wrong while logging in",
       );
+    }
+
+    return res.data;
   } catch (error) {
     handleError(error);
   }
@@ -50,13 +64,16 @@ export async function logout() {
     const res: AxiosResponse<Response> = await ServerEndpoint.post(
       "auth/logout",
       {},
-      { withCredentials: true }
+      { withCredentials: true },
     );
 
-    if (res.status !== 200)
+    if (res.status !== 200) {
       throw new Error(
-        res.data.message || "Something went wrong while logging out"
+        res.data.message || "Something went wrong while logging out",
       );
+    }
+
+    return res.data;
   } catch (error) {
     handleError(error);
   }
@@ -68,7 +85,7 @@ export async function register(
   email: string,
   password: string,
   username: string,
-  AccountRegisterType?: "google"
+  AccountRegisterType?: "google",
 ) {
   try {
     const res = await ServerEndpoint.post("auth/register", {
@@ -81,25 +98,29 @@ export async function register(
         AccountRegisterType !== "google" ? "local" : AccountRegisterType,
     });
 
-    if (res.status !== 201)
+    if (res.status !== 201) {
       throw new Error(
-        res.data.message || "Something went wrong while registering"
+        res.data.message || "Something went wrong while registering",
       );
+    }
+
+    return res.data;
   } catch (error) {
     handleError(error);
   }
 }
 
-export async function requestResetPassword(Email: string) {
+export async function requestResetPassword(email: string) {
   try {
     const res: AxiosResponse<Response> = await ServerEndpoint.put(
-      `auth/req-reset-password?email=${Email}`
+      `auth/req-reset-password?email=${encodeURIComponent(email)}`,
     );
 
-    if (res.status !== 200)
+    if (res.status !== 200) {
       throw new Error(
-        res.data.message || "Something went wrong while sending the request"
+        res.data.message || "Something went wrong while sending the request",
       );
+    }
 
     return res.data;
   } catch (error) {
@@ -110,7 +131,7 @@ export async function requestResetPassword(Email: string) {
 export async function verifyResetPassword(
   token: string,
   newPassword: string,
-  confirmNewPassword: string
+  confirmNewPassword: string,
 ) {
   try {
     const res: AxiosResponse<Response> = await ServerEndpoint.put(
@@ -119,13 +140,14 @@ export async function verifyResetPassword(
         token,
         newPassword,
         confirmNewPassword,
-      }
+      },
     );
 
-    if (res.status !== 200)
+    if (res.status !== 200) {
       throw new Error(
-        res.data.message || "Something went wrong while verifying the request"
+        res.data.message || "Something went wrong while verifying the request",
       );
+    }
 
     return res.data;
   } catch (error) {

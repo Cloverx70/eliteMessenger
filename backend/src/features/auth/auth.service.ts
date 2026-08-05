@@ -5,99 +5,163 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LoginUserDto } from './dtos/loginUser.dto';
+import { JwtService } from '@nestjs/jwt';
+import { Profile } from 'passport-google-oauth20';
+import { randomBytes } from 'node:crypto';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
-import { JwtService } from '@nestjs/jwt';
+
+import { LoginUserDto } from './dtos/loginUser.dto';
 import { RegisterUserDto } from './dtos/registerUser.dto';
-import { Profile } from 'passport-google-oauth20';
 import { ResetPasswordDto } from './dtos/resetPassword.dto';
 import { User } from '../../database/entities/user.entity';
 import { EmailService } from '../../utils/email/email.service';
 import { resetPasswordEmailTemplate } from '../../utils/email/templates/reset-password.template';
 import { handleError } from '../../utils/handleError.util';
+
+const ACCOUNT_LOCK_DURATION_MS = 2 * 60 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS = 5;
+
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
   ) {}
 
+  private formatRemainingTime(milliseconds: number): string {
+    const totalMinutes = Math.max(1, Math.ceil(milliseconds / (1000 * 60)));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours > 0) {
+      return `${hours} hour${hours === 1 ? '' : 's'}${
+        minutes > 0 ? ` ${minutes} min` : ''
+      }`;
+    }
+
+    return `${minutes} min`;
+  }
+
+  private async ensureAccountIsUnlocked(user: User): Promise<void> {
+    if (!user.isAccountLocked || !user.accountLockedAtDate) {
+      return;
+    }
+
+    const unlockAt =
+      new Date(user.accountLockedAtDate).getTime() + ACCOUNT_LOCK_DURATION_MS;
+    const remainingTime = unlockAt - Date.now();
+
+    if (remainingTime > 0) {
+      throw new BadRequestException(
+        `Account locked after too many unsuccessful login attempts. Please try again in ${this.formatRemainingTime(
+          remainingTime,
+        )}.`,
+      );
+    }
+
+    user.isAccountLocked = false;
+    user.failLoginAttempts = 0;
+    user.accountLockedAtDate = null;
+
+    await this.userRepo.save(user);
+  }
+
+  private normalizeUsername(value: string): string {
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '.')
+      .replace(/[^a-z0-9._]/g, '')
+      .replace(/^[._]+|[._]+$/g, '')
+      .slice(0, 30);
+
+    return normalized || 'eliteuser';
+  }
+
+  private async createUniqueGoogleUsername(profile: Profile): Promise<string> {
+    const emailLocalPart = profile.emails?.[0]?.value?.split('@')[0] ?? '';
+    const preferredName =
+      profile.displayName ||
+      `${profile.name?.givenName ?? ''} ${profile.name?.familyName ?? ''}`.trim() ||
+      emailLocalPart;
+
+    const baseUsername = this.normalizeUsername(preferredName);
+
+    if (!(await this.userRepo.exist({ where: { username: baseUsername } }))) {
+      return baseUsername;
+    }
+
+    const googleSuffix = profile.id.replace(/[^a-zA-Z0-9]/g, '').slice(-6);
+    const firstCandidate = `${baseUsername.slice(0, 23)}_${
+      googleSuffix || randomBytes(3).toString('hex')
+    }`.toLowerCase();
+
+    if (!(await this.userRepo.exist({ where: { username: firstCandidate } }))) {
+      return firstCandidate;
+    }
+
+    let attempt = 1;
+
+    while (attempt <= 100) {
+      const candidate = `${baseUsername.slice(0, 24)}_${attempt}`;
+
+      if (!(await this.userRepo.exist({ where: { username: candidate } }))) {
+        return candidate;
+      }
+
+      attempt += 1;
+    }
+
+    return `eliteuser_${randomBytes(6).toString('hex')}`;
+  }
+
   async validate(loginUserDto: LoginUserDto) {
     try {
-      const userExists = await this.userRepo.findOne({
+      const user = await this.userRepo.findOne({
         where: { email: loginUserDto.email },
       });
 
-      if (!userExists) {
-        throw new BadRequestException('invalid email or password');
+      if (!user || user.accountRegisterType === 'google') {
+        throw new BadRequestException('Invalid email or password');
       }
 
-      if (userExists.accountRegisterType === 'google') {
-        userExists.failLoginAttempts += 1;
-        await this.userRepo.save(userExists);
-        throw new BadRequestException('invalid email or password');
-      }
+      await this.ensureAccountIsUnlocked(user);
 
-      if (!(await bcrypt.compare(loginUserDto.password, userExists.password))) {
-        userExists.failLoginAttempts += 1;
-        await this.userRepo.save(userExists);
-        throw new BadRequestException('invalid email or password');
-      }
+      const passwordMatches = await bcrypt.compare(
+        loginUserDto.password,
+        user.password,
+      );
 
-      if (userExists.failLoginAttempts >= 5 && !userExists.isAccountLocked) {
-        const now = new Date();
-        const after2hrs = now.getTime() + 2 * 60 * 60 * 1000;
+      if (!passwordMatches) {
+        user.failLoginAttempts = (user.failLoginAttempts ?? 0) + 1;
 
-        const hours = Math.floor(after2hrs / (1000 * 60 * 60));
-        const minutes = Math.floor(
-          (after2hrs % (1000 * 60 * 60)) / (1000 * 60),
-        );
+        if (user.failLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
+          user.isAccountLocked = true;
+          user.accountLockedAtDate = new Date();
+        }
 
-        const timeLeftString = hours
-          ? `${hours} hour${hours > 1 ? 's' : ''} ${minutes ? minutes + ' min' : ''}`
-          : `${minutes} min`;
+        await this.userRepo.save(user);
 
-        userExists.isAccountLocked = true;
-        userExists.accountLockedAtDate = new Date();
-
-        await this.userRepo.save(userExists);
-
-        throw new BadRequestException(
-          `5 failed login attempts, your account is locked. Please try again in: ${timeLeftString}`,
-        );
-      }
-
-      if (userExists.failLoginAttempts >= 5 && userExists.isAccountLocked) {
-        const now = new Date();
-        const lockedAt = userExists.accountLockedAtDate;
-
-        const timeLeft = now.getTime() - lockedAt.getTime();
-
-        const hours = Math.floor(timeLeft / (1000 * 60 * 60));
-        const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-
-        const timeLeftString = hours
-          ? `${hours} hour${hours > 1 ? 's' : ''} ${minutes ? minutes + ' min' : ''}`
-          : `${minutes} min`;
-
-        if (timeLeft > 0)
+        if (user.isAccountLocked) {
           throw new BadRequestException(
-            `account locked for ${userExists.failLoginAttempts} unsuccessful login attempts, please try again in ${timeLeftString}`,
+            `Account locked after ${MAX_LOGIN_ATTEMPTS} unsuccessful login attempts. Please try again in 2 hours.`,
           );
+        }
 
-        userExists.isAccountLocked = false;
-        userExists.failLoginAttempts = 0;
-        userExists.accountLockedAtDate = null;
+        throw new BadRequestException('Invalid email or password');
       }
 
-      userExists.lastLoggedAt = new Date();
+      user.failLoginAttempts = 0;
+      user.isAccountLocked = false;
+      user.accountLockedAtDate = null;
+      user.lastLoggedAt = new Date();
 
-      await this.userRepo.save(userExists);
-      const payload = this.jwtService.sign({ id: userExists.id });
+      await this.userRepo.save(user);
 
-      return payload;
+      return this.jwtService.sign({ id: user.id });
     } catch (error: any) {
       handleError(error);
     }
@@ -105,19 +169,21 @@ export class AuthService {
 
   async register(registerDto: RegisterUserDto) {
     try {
-      const UserWithSameEmail = await this.userRepo.findOne({
+      const userWithSameEmail = await this.userRepo.findOne({
         where: { email: registerDto.email },
       });
 
-      if (UserWithSameEmail)
-        throw new BadRequestException('email already in use');
+      if (userWithSameEmail) {
+        throw new BadRequestException('Email already in use');
+      }
 
-      const UserWithSameUsername = await this.userRepo.findOne({
+      const userWithSameUsername = await this.userRepo.findOne({
         where: { username: registerDto.username },
       });
 
-      if (UserWithSameUsername)
-        throw new BadRequestException('username already in use');
+      if (userWithSameUsername) {
+        throw new BadRequestException('Username already in use');
+      }
 
       const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
@@ -129,61 +195,77 @@ export class AuthService {
 
       await this.userRepo.save(newUser);
 
-      return { message: 'user registered successfully', code: 201 };
+      return {
+        message: 'User registered successfully',
+        code: 201,
+      };
     } catch (error: any) {
       handleError(error);
     }
   }
 
-  // Google validation :
-
-  async googleValidate(googleValidateDto: Profile) {
+  async googleValidate(profile: Profile): Promise<string | undefined> {
     try {
-      if (
-        !googleValidateDto ||
-        !googleValidateDto.emails ||
-        !googleValidateDto.name
-      )
+      const emailDetails = profile.emails?.[0];
+      const email = emailDetails?.value?.trim().toLowerCase();
+
+      if (!email || !profile.name) {
         throw new BadRequestException(
-          'request body and required fields are required',
+          'Google did not return the required account information',
         );
-
-      const { emails, name, profileUrl, displayName } = googleValidateDto;
-      const email = emails[0]?.value;
-
-      const userExists = await this.userRepo.findOne({
-        where: { email: email },
-      });
-
-      let payload = {};
-      let token = '';
-
-      if (!userExists) {
-        const newUser = this.userRepo.create({
-          email,
-          username: displayName,
-          firstname: name.givenName,
-          lastname: name.familyName,
-          userPfpUrl: profileUrl,
-          emailVerified: emails[0]?.verified,
-          lastLoggedAt: new Date(),
-          accountRegisterType: 'google',
-          isActive: false,
-        });
-
-        const savedUser = await this.userRepo.save(newUser);
-        payload = { id: savedUser.id };
-      } else if (userExists.accountRegisterType === 'google') {
-        userExists.lastLoggedAt = new Date();
-
-        await this.userRepo.save(userExists);
-        payload = { id: userExists.id };
-      } else {
-        throw new BadRequestException('Email is already in use');
       }
 
-      token = this.jwtService.sign(payload);
-      return token;
+      if (emailDetails?.verified === false) {
+        throw new UnauthorizedException('Google email is not verified');
+      }
+
+      const googleProfilePicture = profile.photos?.[0]?.value;
+      const existingUser = await this.userRepo.findOne({
+        where: { email },
+      });
+
+      if (existingUser) {
+        existingUser.lastLoggedAt = new Date();
+        existingUser.emailVerified = true;
+
+        if (!existingUser.userPfpUrl && googleProfilePicture) {
+          existingUser.userPfpUrl = googleProfilePicture;
+        }
+
+        await this.userRepo.save(existingUser);
+
+        return this.jwtService.sign({ id: existingUser.id });
+      }
+
+      const username = await this.createUniqueGoogleUsername(profile);
+      const randomPasswordHash = await bcrypt.hash(
+        randomBytes(48).toString('hex'),
+        10,
+      );
+
+      const firstname =
+        profile.name.givenName?.trim() ||
+        profile.displayName?.trim() ||
+        'Elite';
+      const lastname = profile.name.familyName?.trim() || 'User';
+
+      const newUser = this.userRepo.create({
+        email,
+        username,
+        firstname,
+        lastname,
+        password: randomPasswordHash,
+        bio: `@${username}`,
+        emailVerified: true,
+        lastLoggedAt: new Date(),
+        accountRegisterType: 'google',
+        isActive: false,
+        ...(googleProfilePicture ? { userPfpUrl: googleProfilePicture } : {}),
+      });
+
+      const savedUser = await this.userRepo.save(newUser);
+
+      return this.jwtService.sign({ id: savedUser.id });
     } catch (error: any) {
       handleError(error);
     }
@@ -192,9 +274,7 @@ export class AuthService {
   async requestResetPassword(email: string) {
     try {
       const user = await this.userRepo.findOne({
-        where: {
-          email: email,
-        },
+        where: { email },
       });
 
       if (user) {
@@ -208,18 +288,21 @@ export class AuthService {
           },
         );
 
+        const frontBaseUrl =
+          process.env.FRONT_BASE_URL ?? 'http://localhost:8000';
+
         await this.emailService.sendEmail(
           user.email,
           'Reset Your Password',
           resetPasswordEmailTemplate(
-            `http://localhost:8000/auth/reset-password/${token}`,
+            `${frontBaseUrl}/auth/reset-password/${token}`,
           ),
         );
       }
 
       return {
         message:
-          'if the email you provided is associated with an account please check your inbox',
+          'If the email is associated with an account, please check your inbox',
         code: 200,
       };
     } catch (error: any) {
@@ -231,7 +314,6 @@ export class AuthService {
     try {
       const decodedToken = this.jwtService.decode(resetPasswordDto.token) as {
         exp?: number;
-        sub?: string;
       };
       const currentTimestamp = Math.floor(Date.now() / 1000);
 
@@ -243,28 +325,40 @@ export class AuthService {
 
       const { email, prv } = this.jwtService.verify(resetPasswordDto.token);
 
-      if (resetPasswordDto.newPassword.length < 8)
+      if (resetPasswordDto.newPassword.length < 8) {
         throw new BadRequestException(
-          'password should be at least 8 characters long',
+          'Password should be at least 8 characters long',
         );
+      }
 
-      if (resetPasswordDto.newPassword !== resetPasswordDto.confirmNewPassword)
-        throw new BadRequestException('passwords does not match');
+      if (
+        resetPasswordDto.newPassword !== resetPasswordDto.confirmNewPassword
+      ) {
+        throw new BadRequestException('Passwords do not match');
+      }
 
-      const user = await this.userRepo.findOne({ where: { email: email } });
+      const user = await this.userRepo.findOne({ where: { email } });
 
-      if (!user) throw new NotFoundException('user not found');
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
 
-      if (prv !== user.resetPasswordNb)
+      if (prv !== user.resetPasswordNb) {
         throw new UnauthorizedException(
           'Invalid or expired password reset link.',
         );
+      }
 
       user.password = await bcrypt.hash(resetPasswordDto.newPassword, 10);
-      user.resetPasswordNb++;
+      user.resetPasswordNb += 1;
+      user.failLoginAttempts = 0;
+      user.isAccountLocked = false;
+      user.accountLockedAtDate = null;
+
+      await this.userRepo.save(user);
 
       return {
-        message: 'user reset password successfully..',
+        message: 'Password reset successfully',
         code: 200,
       };
     } catch (error: any) {
