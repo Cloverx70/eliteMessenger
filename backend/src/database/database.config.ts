@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { DataSourceOptions } from 'typeorm';
 
 const isDatabaseSslEnabled = process.env.DB_SSL === 'true';
+const shouldSynchronize = process.env.DB_SYNCHRONIZE === 'true';
 
 export const databaseOptions: DataSourceOptions = {
   type: 'mysql',
@@ -29,7 +30,7 @@ export const databaseOptions: DataSourceOptions = {
 
   migrationsRun: false,
 
-  synchronize: false,
+  synchronize: shouldSynchronize,
 
   logging: process.env.NODE_ENV === 'development',
 };
