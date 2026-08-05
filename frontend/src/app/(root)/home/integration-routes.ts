@@ -1,10 +1,5 @@
-/**
- * Keep all project-specific routes in this file.
- * The dashboard components do not hardcode application URLs anywhere else.
- */
 export const homeIntegrationRoutes = {
   api: {
-    // Change only these two values when your existing endpoint names differ.
     currentUser: "/auth/me",
     suggestedFriends: "/friends/people-you-may-know",
   },

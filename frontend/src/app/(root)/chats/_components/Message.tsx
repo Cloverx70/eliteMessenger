@@ -31,20 +31,10 @@ const Message = ({ message, isSender, isLast }: MessageProps) => {
 
   const hasAttachments = Boolean(message.attachments?.length);
 
-  /*
-   * Use sharedPost too because optimistic messages may contain
-   * the post before sharedPostId is returned by the server.
-   */
   const hasSharedPost = Boolean(message.sharedPostId || message.sharedPost);
 
   const normalizedMessage = message.message?.trim() ?? "";
 
-  /*
-   * Your backend currently saves "Shared a post" as a fallback
-   * message. Hide it when the actual post card is displayed.
-   *
-   * Real text written alongside a shared post will still show.
-   */
   const isAutomaticSharedPostText =
     hasSharedPost && normalizedMessage.toLowerCase() === "shared a post";
 

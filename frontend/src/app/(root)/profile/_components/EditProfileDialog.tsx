@@ -135,9 +135,7 @@ export default function EditProfileDialog({
       toast.success("Profile updated successfully");
 
       onClose();
-    } catch {
-      // Your shared API helper displays the backend error.
-    }
+    } catch {}
   };
 
   const initials = `${firstname.charAt(0)}${lastname.charAt(0)}`.toUpperCase();

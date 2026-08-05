@@ -925,11 +925,7 @@ export class NotificationsService {
       readAt: notification.readAt,
       createdAt: notification.createdAt,
       updatedAt: notification.updatedAt,
-
-      // Correct spelling.
       recipientId: notification.recipientId,
-
-      // Temporary compatibility for any frontend code using the old typo.
       recepientId: notification.recipientId,
     };
   }
@@ -1001,7 +997,6 @@ export class NotificationsService {
       return null;
     }
 
-    // External/demo URLs are already usable and must not be sent to S3.
     if (/^https?:\/\//i.test(value)) {
       return value;
     }
@@ -1010,8 +1005,6 @@ export class NotificationsService {
       const { url } = await this.s3Service.getFileUrl(value);
       return url || null;
     } catch {
-      // A broken profile picture or post thumbnail must not break
-      // the complete notifications response.
       return null;
     }
   }
@@ -1027,8 +1020,6 @@ export class NotificationsService {
       firstname: user.firstname,
       lastname: user.lastname,
 
-      // Resolve the stored S3 key only for this response object.
-      // The TypeORM entity is not changed and is never saved.
       userPfpUrl: await this.resolveStoredFileUrl(user.userPfpUrl),
 
       isActive: user.isActive,

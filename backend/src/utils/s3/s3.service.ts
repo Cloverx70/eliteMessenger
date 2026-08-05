@@ -44,9 +44,6 @@ export class S3Service {
     });
   }
 
-  /**
-   * Upload File
-   */
   async uploadFile(file: Express.Multer.File, folder: string): Promise<string> {
     try {
       const extension = file.originalname.split('.').pop();
@@ -70,9 +67,6 @@ export class S3Service {
     }
   }
 
-  /**
-   * Delete File
-   */
   async deleteFile(key: string): Promise<void> {
     try {
       await this.s3.send(
@@ -87,10 +81,6 @@ export class S3Service {
       throw new InternalServerErrorException('Could not delete file.');
     }
   }
-
-  /**
-   * Get Signed URL
-   */
 
   async getFileUrl(
     key: string,

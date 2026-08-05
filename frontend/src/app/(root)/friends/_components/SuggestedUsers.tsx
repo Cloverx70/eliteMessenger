@@ -8,7 +8,7 @@ import {
 import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import Loader from "@/app/components/loader";
+import Spinner from "@/app/components/spinner";
 import UserCard from "./userCard";
 import toaster from "@/app/components/toaster";
 
@@ -93,7 +93,11 @@ const SuggestedUsers = () => {
   };
 
   if (suggestedUsersPending) {
-    return <Loader />;
+    return (
+      <div className=" w-full h-full flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
   }
 
   if (!suggestedUsers?.length) {

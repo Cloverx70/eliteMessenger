@@ -70,13 +70,10 @@ export class GroupChatService {
       return user;
     }
 
-    // External/demo URLs are already ready for the frontend.
     if (/^https?:\/\//i.test(storedValue)) {
       return user;
     }
 
-    // Replace the stored S3 key only on this in-memory entity.
-    // No repository.save() call is made, so the database still stores the key.
     const { url } = await this.s3Service.getFileUrl(storedValue);
     user.userPfpUrl = url;
 
@@ -189,9 +186,6 @@ export class GroupChatService {
           }
         : await this.GetMessageReceiptSummary(message.id));
 
-    /*
-     * Normal message attachments
-     */
     const attachments = await Promise.all(
       (message.attachments ?? []).map(async (attachment) => {
         const { url } = await this.s3Service.getFileUrl(attachment.key);
@@ -206,9 +200,6 @@ export class GroupChatService {
       }),
     );
 
-    /*
-     * Shared Discover post
-     */
     const sharedPost = message.sharedPost
       ? {
           id: message.sharedPost.id,

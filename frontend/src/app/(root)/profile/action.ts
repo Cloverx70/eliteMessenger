@@ -74,7 +74,6 @@ export async function UpdateMyProfile(
     formData.append("lastname", input.lastname.trim());
     formData.append("username", input.username.trim());
 
-    // Sending an empty string lets your DTO transform it into null.
     formData.append("bio", input.bio?.trim() ?? "");
 
     if (input.profilePicture) {

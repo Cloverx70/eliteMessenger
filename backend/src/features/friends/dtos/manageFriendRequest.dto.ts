@@ -5,7 +5,7 @@ import { FriendStatus } from '../../../database/entities/friends.entity';
 export class manageFriendRequestDto {
   @IsUUID()
   @IsNotEmpty()
-  requestId: string; //request id
+  requestId: string;
 
   @IsEnum(FriendStatus)
   @IsNotEmpty()

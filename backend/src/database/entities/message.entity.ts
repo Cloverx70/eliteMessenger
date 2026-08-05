@@ -11,7 +11,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { ChatRoom } from './chatRoom.entity'; // import your Room entity
+import { ChatRoom } from './chatRoom.entity';
 import { MessageAttachment } from './messageAttachment.entity';
 import { Post } from './post.entity';
 import { User } from './user.entity';

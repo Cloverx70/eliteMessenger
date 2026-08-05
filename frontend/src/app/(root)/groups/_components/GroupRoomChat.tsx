@@ -1,5 +1,3 @@
-///////////
-
 "use client";
 
 import { GetGroupAndMessages, IGroupMessage } from "../../groups/group-action";
@@ -79,7 +77,7 @@ const GroupRoomChat = ({ user }: GroupRoomChatProps) => {
     return () => {
       leaveGroupRoom(groupId, user.id);
     };
-    // Socket helpers use the singleton socket and are intentionally scoped by ID.
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, user.id]);
 

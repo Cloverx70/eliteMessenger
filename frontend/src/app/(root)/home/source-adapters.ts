@@ -1,11 +1,6 @@
 import { GetAllMedia, MediaSources } from "../media/action";
 
 import { DiscoverFeedTab } from "../discover/types";
-/**
- * This is the only file that imports your existing feature actions.
- * When one of your real filenames differs, edit the import here rather than
- * changing the dashboard components.
- */
 import { GetChatList } from "../chats/action";
 import { GetGroupList } from "../groups/group-action";
 import { getDiscoverFeed } from "../discover/action";

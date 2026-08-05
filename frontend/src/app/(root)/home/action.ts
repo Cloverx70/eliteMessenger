@@ -1,9 +1,8 @@
-import type { AxiosResponse } from 'axios';
+import type { HomeSuggestedUser, HomeUser } from "./types";
 
-import ServerEndpoint from '@/lib/server-endpoint';
-
-import { homeIntegrationRoutes } from './integration-routes';
-import type { HomeSuggestedUser, HomeUser } from './types';
+import type { AxiosResponse } from "axios";
+import ServerEndpoint from "@/lib/server-endpoint";
+import { homeIntegrationRoutes } from "./integration-routes";
 
 interface ApiResponse<T> {
   message?: string;
@@ -14,15 +13,15 @@ interface ApiResponse<T> {
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function readString(value: unknown): string {
-  return typeof value === 'string' ? value : '';
+  return typeof value === "string" ? value : "";
 }
 
 function readNullableString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function readNumber(value: unknown): number {
@@ -32,7 +31,7 @@ function readNumber(value: unknown): number {
 
 function unwrapApiData(value: unknown): unknown {
   if (!isRecord(value)) return value;
-  return 'data' in value ? value.data : value;
+  return "data" in value ? value.data : value;
 }
 
 function parseUser(value: unknown): HomeUser | null {
@@ -49,18 +48,10 @@ function parseUser(value: unknown): HomeUser | null {
     firstname: readString(value.firstname),
     lastname: readString(value.lastname),
     userPfpUrl: readNullableString(value.userPfpUrl),
-    isActive:
-      typeof value.isActive === 'boolean'
-        ? value.isActive
-        : undefined,
+    isActive: typeof value.isActive === "boolean" ? value.isActive : undefined,
   };
 }
 
-/**
- * This adapter intentionally returns null instead of crashing the entire home
- * page when your current-user endpoint has a different path. Update the path
- * in integration-routes.ts and the header will immediately become personalized.
- */
 export async function getHomeCurrentUser(): Promise<HomeUser | null> {
   try {
     const response: AxiosResponse<ApiResponse<unknown> | unknown> =
@@ -74,24 +65,12 @@ export async function getHomeCurrentUser(): Promise<HomeUser | null> {
   }
 }
 
-/**
- * Supports common backend response shapes:
- *   User[]
- *   { data: User[] }
- *   { data: { users: User[] } }
- *   { data: { items: User[] } }
- */
-export async function getHomeSuggestedFriends(): Promise<
-  HomeSuggestedUser[]
-> {
+export async function getHomeSuggestedFriends(): Promise<HomeSuggestedUser[]> {
   try {
     const response: AxiosResponse<ApiResponse<unknown> | unknown> =
-      await ServerEndpoint.get(
-        homeIntegrationRoutes.api.suggestedFriends,
-        {
-          withCredentials: true,
-        },
-      );
+      await ServerEndpoint.get(homeIntegrationRoutes.api.suggestedFriends, {
+        withCredentials: true,
+      });
 
     const unwrapped = unwrapApiData(response.data);
 
@@ -125,9 +104,7 @@ export async function getHomeSuggestedFriends(): Promise<
           requestId: readNullableString(value.requestId),
         };
       })
-      .filter(
-        (value): value is HomeSuggestedUser => value !== null,
-      )
+      .filter((value): value is HomeSuggestedUser => value !== null)
       .slice(0, 5);
   } catch {
     return [];

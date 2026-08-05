@@ -109,13 +109,6 @@ export class FriendsService {
         }),
       );
 
-      /*
-       * Get accepted friendships involving either the sender
-       * or the receiver.
-       *
-       * This is only used to calculate the number included
-       * in the notification.
-       */
       const acceptedFriendships = await this.friendsRepo
         .createQueryBuilder('friend')
         .where('friend.status = :acceptedStatus', {
@@ -136,20 +129,12 @@ export class FriendsService {
       const receiverFriendIds = new Set<string>();
 
       for (const friendship of acceptedFriendships) {
-        /*
-         * Extract the friend on the opposite side of the
-         * sender's accepted friendship.
-         */
         if (friendship.user1Id === sid) {
           senderFriendIds.add(friendship.user2Id);
         } else if (friendship.user2Id === sid) {
           senderFriendIds.add(friendship.user1Id);
         }
 
-        /*
-         * Extract the friend on the opposite side of the
-         * receiver's accepted friendship.
-         */
         if (friendship.user1Id === rid) {
           receiverFriendIds.add(friendship.user2Id);
         } else if (friendship.user2Id === rid) {
@@ -157,10 +142,6 @@ export class FriendsService {
         }
       }
 
-      /*
-       * Defensive cleanup: neither the sender nor receiver
-       * should be counted as a mutual friend.
-       */
       senderFriendIds.delete(sid);
       senderFriendIds.delete(rid);
 
@@ -235,7 +216,7 @@ export class FriendsService {
         await this.chatService.CreateChatRoom({
           uid1: request.user1Id,
           uid2: request.user2Id,
-        }); // on accepting a friend request automatically create a chatroom between them.
+        });
       } else {
         await this.friendsRepo.remove(request);
       }
@@ -360,13 +341,6 @@ export class FriendsService {
         );
       };
 
-      /*
-       * Find all users who already have a relationship
-       * with the current user.
-       *
-       * This includes accepted and ongoing relationships,
-       * but excludes declined relationships.
-       */
       const friendRows = await this.friendsRepo
         .createQueryBuilder('f')
         .select(
@@ -398,12 +372,6 @@ export class FriendsService {
 
       const friendIds = [...new Set(friendRows.map((friend) => friend.id))];
 
-      /*
-       * No relationships yet.
-       *
-       * Return users who do not already have any
-       * relationship row with the current user.
-       */
       if (friendIds.length === 0) {
         const excludedIdsRaw = `
         SELECT fr.user1Id AS id
@@ -442,10 +410,6 @@ export class FriendsService {
         };
       }
 
-      /*
-       * Find accepted friends of the current user's
-       * accepted/ongoing connections.
-       */
       const mutualRows = await this.friendsRepo
         .createQueryBuilder('f')
         .select(
@@ -475,11 +439,6 @@ export class FriendsService {
           id: string;
         }>();
 
-      /*
-       * Exclude:
-       * - the current user
-       * - users already related to the current user
-       */
       const mutualIds = [
         ...new Set(
           mutualRows
@@ -488,12 +447,6 @@ export class FriendsService {
         ),
       ];
 
-      /*
-       * No mutual connections.
-       *
-       * Return users who do not already have a
-       * non-declined relationship with the current user.
-       */
       if (mutualIds.length === 0) {
         const queryBuilder = this.userRepo
           .createQueryBuilder('u')
@@ -519,9 +472,6 @@ export class FriendsService {
         };
       }
 
-      /*
-       * Return mutual connections.
-       */
       const queryBuilder = this.userRepo
         .createQueryBuilder('u')
         .select(this.usersSelect)
@@ -621,10 +571,6 @@ export class FriendsService {
 
   async GetSuggestedUsers(uid: string) {
     try {
-      /*
-       * Find every user who already has any relationship
-       * with the current user.
-       */
       const relationships = await this.friendsRepo
         .createQueryBuilder('f')
         .select(['f.user1Id', 'f.user2Id'])
@@ -658,10 +604,6 @@ export class FriendsService {
           uid,
         });
 
-      /*
-       * Do not suggest users who already have a
-       * relationship with the current user.
-       */
       if (relatedUserIds.length > 0) {
         queryBuilder.andWhere(
           `
@@ -740,10 +682,6 @@ export class FriendsService {
 
       const suggestedUsers = await queryBuilder.getMany();
 
-      /*
-       * Convert every stored S3 key into a temporary
-       * signed URL before returning the response.
-       */
       await this.hydrateUserProfilePictures(suggestedUsers);
 
       return {
@@ -764,13 +702,10 @@ export class FriendsService {
       return null;
     }
 
-    // Google profile pictures, demo URLs, or already-resolved URLs.
     if (/^https?:\/\//i.test(value)) {
       return value;
     }
 
-    // The database stores the permanent S3 key.
-    // The frontend receives a temporary signed URL.
     const { url } = await this.s3Service.getFileUrl(value);
 
     return url;

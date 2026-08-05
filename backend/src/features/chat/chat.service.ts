@@ -39,10 +39,6 @@ export class ChatService implements OnModuleInit {
     private readonly s3Service: S3Service,
   ) {}
 
-  /**
-   * The in-memory Socket.IO presence map is cleared whenever Nest restarts.
-   * Reset stale database flags before the server begins accepting traffic.
-   */
   async onModuleInit(): Promise<void> {
     const now = new Date();
 
@@ -76,12 +72,6 @@ export class ChatService implements OnModuleInit {
     'cr.lastMessage',
   ];
 
-  /**
-   * Converts a stored profile-picture S3 key into a temporary URL.
-   *
-   * External/demo URLs are already usable, so they are returned unchanged.
-   * This method never saves anything to the database.
-   */
   private async resolveProfilePictureUrl(
     value?: string | null,
   ): Promise<string | null> {
@@ -98,12 +88,6 @@ export class ChatService implements OnModuleInit {
     return url;
   }
 
-  /**
-   * Replaces user.userPfpUrl only on the in-memory entity.
-   *
-   * The database still keeps the permanent S3 key because no repository
-   * save/update call is made here.
-   */
   private async hydrateUserPfp(user?: User | null): Promise<User | null> {
     if (!user) {
       return null;

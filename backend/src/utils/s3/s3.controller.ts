@@ -17,9 +17,6 @@ import { S3Service } from './s3.service';
 export class S3Controller {
   constructor(private readonly s3Service: S3Service) {}
 
-  /**
-   * Upload multiple files to S3
-   */
   @Post('upload/:folder')
   @UseInterceptors(
     FilesInterceptor('files', 5, {
@@ -29,18 +26,15 @@ export class S3Controller {
 
       fileFilter: (req, file, cb) => {
         const allowedMimeTypes = [
-          // Images
           'image/jpeg',
           'image/png',
           'image/webp',
           'image/gif',
 
-          // Videos
           'video/mp4',
           'video/webm',
           'video/quicktime',
 
-          // Documents
           'application/pdf',
           'application/msword',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -86,9 +80,6 @@ export class S3Controller {
     };
   }
 
-  /**
-   * Generate signed URL
-   */
   @Get('url/:key')
   async getFileUrl(@Param('key') key: string) {
     const url = await this.s3Service.getFileUrl(key);
@@ -98,9 +89,6 @@ export class S3Controller {
     };
   }
 
-  /**
-   * Delete file from S3
-   */
   @Delete(':key')
   async deleteFile(@Param('key') key: string) {
     await this.s3Service.deleteFile(key);

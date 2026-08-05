@@ -136,11 +136,6 @@ export class ProfileService {
           profilePicture,
         );
 
-        /*
-         * This must be a permanent public
-         * or CDN URL, not an expiring
-         * signed URL.
-         */
         user.userPfpUrl = uploaded.key;
 
         uploadedProfilePictureKey = uploaded.key;

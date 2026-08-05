@@ -80,31 +80,24 @@ export class User {
   @Column({ type: 'boolean', default: false })
   isAdmin: boolean = false;
 
-  // Posts created by this user
   @OneToMany(() => Post, (post) => post.author)
   posts: Post[];
 
-  // Posts liked by this user
   @OneToMany(() => PostLike, (postLike) => postLike.user)
   postLikes: PostLike[];
 
-  // Comments written by this user
   @OneToMany(() => PostComment, (comment) => comment.author)
   postComments: PostComment[];
 
-  // Posts saved by this user
   @OneToMany(() => SavedPost, (savedPost) => savedPost.user)
   savedPosts: SavedPost[];
 
-  // Posts shared by this user
   @OneToMany(() => PostShare, (postShare) => postShare.sender)
   postShares: PostShare[];
 
-  // Posts reported by this user
   @OneToMany(() => PostReport, (report) => report.reporter)
   postReports: PostReport[];
 
-  // Posts hidden by this user
   @OneToMany(() => HiddenPost, (hiddenPost) => hiddenPost.user)
   hiddenPosts: HiddenPost[];
 

@@ -22,11 +22,6 @@ export class MessageAttachment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  /**
-   * S3 object key
-   * Example:
-   * messages/8a2f-image.png
-   */
   @Column()
   key: string;
 
@@ -36,9 +31,6 @@ export class MessageAttachment {
   })
   type: AttachmentType;
 
-  /**
-   * File size in bytes
-   */
   @Column({
     nullable: true,
   })

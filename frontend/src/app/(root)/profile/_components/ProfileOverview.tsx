@@ -69,9 +69,7 @@ export default function ProfileOverview({
 
       await navigator.clipboard.writeText(url);
       toast.success("Profile link copied");
-    } catch {
-      // Native share sheets can be dismissed without being an error.
-    }
+    } catch {}
   };
 
   return (

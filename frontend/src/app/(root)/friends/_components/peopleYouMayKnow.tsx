@@ -10,7 +10,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import Image from "next/image";
 import Link from "next/link";
-import Loader from "@/app/components/loader";
 import Spinner from "@/app/components/spinner";
 import toaster from "@/app/components/toaster";
 import { useDebounce } from "@/app/constants";
@@ -76,7 +75,12 @@ const PeopleYouMayKnow = ({ query }: IPeopleYouMayKnowProps) => {
     cancelRequestMutate(rid);
   };
 
-  if (getDataPending) return <Loader />;
+  if (getDataPending)
+    return (
+      <div className=" w-full h-full flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
 
   if (PeopleYouMayKnow && PeopleYouMayKnow.length === 0)
     return (

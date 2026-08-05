@@ -755,10 +755,8 @@ export class PostsService {
       const postSharedNotification: CreateNotificationCauseInput = {
         cause: NotificationCause.POST_SHARED,
 
-        // User who shared the post
         actorId: userId,
 
-        // Owner of the post
         recipientId: post.authorId,
 
         postId: postId,

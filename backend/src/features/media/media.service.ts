@@ -13,8 +13,6 @@ import { handleError } from '../../utils/handleError.util';
 import { SignedFileUrls } from '../../utils/s3/s3.service';
 import { SelectQueryBuilder } from 'typeorm/browser';
 
-// Replace this path/name with your actual S3 service.
-
 export enum MediaSources {
   ALLMEDIA = 'ALL',
   CHATS = 'CHATS',
@@ -162,8 +160,6 @@ export class MediaService {
 
     query
       .select([
-        // Selects all attachment columns, including
-        // key and blurKey for internal signing.
         'attachment',
 
         'message.id',
@@ -223,7 +219,6 @@ export class MediaService {
 
     query
       .select([
-        // Includes key and blurKey internally.
         'attachment',
 
         'message.id',
@@ -324,8 +319,6 @@ export class MediaService {
           throw new NotFoundException('Attachment was not found.');
         }
 
-        // Access attachment attributes:
-
         const url = await this.s3Service.getFileUrl(attachment.key);
 
         const { key, ...attachmentWithoutKey } = attachment;
@@ -375,19 +368,6 @@ export class MediaService {
         if (!attachment) {
           throw new NotFoundException('Attachment was not found.');
         }
-
-        // Access attachment attributes:
-        console.log(attachment.id);
-        console.log(attachment.key);
-        console.log(attachment.type);
-
-        // Access group-message attributes:
-        console.log(attachment.message.id);
-        console.log(attachment.message.senderId);
-        console.log(attachment.message.groupId);
-
-        // Access sender attributes:
-        console.log(attachment.message.sender?.username);
 
         const url = await this.s3Service.getFileUrl(attachment.key);
 

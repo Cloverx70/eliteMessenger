@@ -36,7 +36,6 @@ export interface IGroupMediaMessage {
 export interface IBaseMediaAttachment {
   id: string;
 
-  // Signed S3 URLs returned by the backend.
   url: string;
   blurUrl?: string;
 
