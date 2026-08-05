@@ -9,10 +9,7 @@ import { databaseOptions } from './database.config';
       isGlobal: true,
     }),
 
-    TypeOrmModule.forRoot({
-      ...databaseOptions,
-      synchronize: false,
-    }),
+    TypeOrmModule.forRoot(databaseOptions),
   ],
 
   exports: [TypeOrmModule],
