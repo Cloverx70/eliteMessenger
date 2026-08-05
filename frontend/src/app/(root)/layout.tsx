@@ -41,7 +41,7 @@ export default async function RootLayout({
   const user = await getUserFromCookie();
 
   if (!user) {
-    redirect("/login");
+    redirect("/auth/login");
   }
 
   return (

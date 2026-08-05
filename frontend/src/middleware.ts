@@ -1,77 +1,92 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sealData, unsealData } from "iron-session";
 
-import ServerEndpoint from "./lib/server-endpoint";
 import { sessionOptions } from "./lib/session-options";
 
 const AUTH_TOKEN_COOKIE = "ELITE_ERA_AUTH_TOKEN";
+const SESSION_MAX_AGE_SECONDS = 60 * 5;
+
+function isPublicRoute(pathname: string): boolean {
+  return (
+    pathname === "/auth/login" ||
+    pathname === "/auth/register" ||
+    pathname === "/auth/reset-password" ||
+    pathname.startsWith("/auth/reset-password/")
+  );
+}
+
+function redirectToLogin(request: NextRequest): NextResponse {
+  const response = NextResponse.redirect(new URL("/auth/login", request.url));
+  response.cookies.delete(sessionOptions.cookieName);
+  return response;
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (
-    pathname === "/auth/login" ||
-    pathname === "/auth/register" ||
-    pathname === "/auth/reset-password"
-  ) {
+  if (isPublicRoute(pathname)) {
     return NextResponse.next();
   }
 
   const token = request.cookies.get(AUTH_TOKEN_COOKIE)?.value;
-  const sealedSession = request.cookies.get(sessionOptions.cookieName)?.value;
 
-  const response = NextResponse.next();
+  if (!token) {
+    return redirectToLogin(request);
+  }
+
+  const sealedSession = request.cookies.get(sessionOptions.cookieName)?.value;
 
   if (sealedSession) {
     try {
       const sessionData = await unsealData(sealedSession, sessionOptions);
+      const refreshedSession = await sealData(sessionData, sessionOptions);
+      const response = NextResponse.next();
 
-      const newSealed = await sealData(sessionData, sessionOptions);
-      response.cookies.set(sessionOptions.cookieName, newSealed, {
+      response.cookies.set(sessionOptions.cookieName, refreshedSession, {
         ...sessionOptions.cookieOptions,
-        maxAge: 60 * 5,
+        maxAge: SESSION_MAX_AGE_SECONDS,
       });
-    } catch (err) {
-      console.error(err);
-      return NextResponse.redirect(new URL("/auth/login", request.url));
+
+      return response;
+    } catch {
+      // The JWT is still checked below and a new frontend session is created.
     }
   }
 
-  if (!token) {
-    response.cookies.delete(sessionOptions.cookieName);
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, "");
+
+  if (!apiUrl) {
+    return redirectToLogin(request);
   }
 
   try {
-    const apiRes = await ServerEndpoint.get("/auth/status", {
+    const apiResponse = await fetch(`${apiUrl}/auth/status`, {
+      method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
       },
+      cache: "no-store",
     });
 
-    if (apiRes.status !== 200) throw new Error("Invalid token");
+    if (!apiResponse.ok) {
+      return redirectToLogin(request);
+    }
 
-    const sealed = await sealData(apiRes.data, sessionOptions);
+    const user = await apiResponse.json();
+    const sealed = await sealData(user, sessionOptions);
+    const response = NextResponse.next();
 
     response.cookies.set(sessionOptions.cookieName, sealed, {
       ...sessionOptions.cookieOptions,
-      maxAge: 60 * 5,
+      maxAge: SESSION_MAX_AGE_SECONDS,
     });
 
     return response;
-  } catch (err) {
-    console.error(err);
-
-    const redirectResponse = NextResponse.redirect(
-      new URL("/auth/login", request.url),
-    );
-
-    response.cookies.delete(sessionOptions.cookieName);
-
-    return redirectResponse;
+  } catch {
+    return redirectToLogin(request);
   }
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|login).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.png).*)"],
 };

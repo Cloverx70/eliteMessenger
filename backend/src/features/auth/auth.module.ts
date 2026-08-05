@@ -2,6 +2,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { ConfigService } from '@nestjs/config';
 import { EmailModule } from '../../utils/email/email.module';
+import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { Module } from '@nestjs/common';
@@ -10,7 +11,6 @@ import { S3Module } from '../../utils/s3/s3.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../database/entities/user.entity';
 import { UserModule } from '../user/user.module';
-import { googleStrategy } from './strategies/google.strategy';
 import { localStrategy } from './strategies/local.strategy';
 
 @Module({
@@ -21,7 +21,7 @@ import { localStrategy } from './strategies/local.strategy';
       inject: [ConfigService],
       global: true,
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET'),
+        secret: configService.getOrThrow<string>('JWT_SECRET'),
       }),
     }),
     UserModule,
@@ -29,6 +29,6 @@ import { localStrategy } from './strategies/local.strategy';
     S3Module,
   ],
   controllers: [AuthController],
-  providers: [AuthService, localStrategy, JwtStrategy, googleStrategy],
+  providers: [AuthService, localStrategy, JwtStrategy, GoogleStrategy],
 })
 export class AuthModule {}
