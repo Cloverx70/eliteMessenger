@@ -35,6 +35,8 @@ export interface IMessage {
   deletedAt?: Date | null;
   updatedAt: Date;
   attachments?: IAttachment[];
+  sharedPostId: string | null;
+  sharedPost: DiscoverPost | null;
   status: "pending" | "sent" | "delivered" | "seen";
   tempId?: string;
 }
