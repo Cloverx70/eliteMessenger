@@ -36,9 +36,51 @@ export interface IGroupMessage {
   attachments: IAttachment[];
   status: GroupMessageStatus;
   receiptSummary: IGroupReceiptSummary;
+  sharedPostId?: string | null;
+  sharedPost?: IGroupSharedPost | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date | null;
+}
+
+export interface IGroupSharedPostAttachment {
+  id: string;
+  type: "IMAGE" | "VIDEO";
+  mimeType?: string;
+  filename?: string;
+  size?: number;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+  displayOrder: number;
+  blurDataURL?: string | null;
+  url: string;
+  createdAt: string | Date;
+}
+
+export interface IGroupSharedPost {
+  id: string;
+  authorId: string;
+  caption: string | null;
+  visibility: string;
+  commentsEnabled: boolean;
+
+  likeCount: number;
+  commentCount: number;
+  shareCount: number;
+
+  author: {
+    id: string;
+    username: string;
+    firstname: string;
+    lastname: string;
+    userPfpUrl: string | null;
+  } | null;
+
+  attachments: IGroupSharedPostAttachment[];
+
+  createdAt: string | Date;
+  updatedAt: string | Date;
 }
 
 export interface IGroupListItem {
