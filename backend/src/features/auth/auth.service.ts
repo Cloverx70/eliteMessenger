@@ -190,6 +190,7 @@ export class AuthService {
       const newUser = this.userRepo.create({
         ...registerDto,
         password: hashedPassword,
+        accountRegisterType: 'local',
         bio: `@${registerDto.username}`,
       });
 

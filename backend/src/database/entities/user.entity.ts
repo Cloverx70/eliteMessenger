@@ -56,7 +56,7 @@ export class User {
   @Column({ type: 'int', nullable: true, default: 0 })
   failLoginAttempts: number = 0;
 
-  @Column({ type: 'enum', enum: ['google', 'local'] })
+  @Column({ type: 'enum', enum: ['google', 'local'], default: 'local' })
   accountRegisterType: 'google' | 'local';
 
   @Column({ type: 'boolean', default: false })
