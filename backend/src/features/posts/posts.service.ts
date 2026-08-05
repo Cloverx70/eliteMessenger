@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -76,6 +77,8 @@ interface FeedRawRow {
 
 @Injectable()
 export class PostsService {
+  private readonly logger = new Logger(PostsService.name);
+
   constructor(
     @InjectRepository(Post)
     private readonly postRepo: Repository<Post>,
@@ -437,50 +440,103 @@ export class PostsService {
     userId: string,
     postId: string,
     liked: boolean,
-  ): Promise<{ liked: boolean; likeCount: number }> {
+  ): Promise<{
+    liked: boolean;
+    likeCount: number;
+  }> {
     const post = await this.loadPost(postId);
+
     await this.assertCanViewPost(userId, post);
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const postRepo = manager.getRepository(Post);
+
       const likeRepo = manager.getRepository(PostLike);
 
       const lockedPost = await postRepo.findOne({
-        where: { id: postId },
-        lock: { mode: 'pessimistic_write' },
+        where: {
+          id: postId,
+        },
+        lock: {
+          mode: 'pessimistic_write',
+        },
       });
-      if (!lockedPost) throw new NotFoundException('Post was not found.');
+
+      if (!lockedPost) {
+        throw new NotFoundException('Post was not found.');
+      }
 
       const existing = await likeRepo.findOne({
-        where: { postId, userId },
+        where: {
+          postId,
+          userId,
+        },
       });
 
+      let shouldNotify = false;
+
       if (liked && !existing) {
-        await likeRepo.save(likeRepo.create({ postId, userId }));
+        await likeRepo.save(
+          likeRepo.create({
+            postId,
+            userId,
+          }),
+        );
+
         lockedPost.likeCount += 1;
+
         await postRepo.save(lockedPost);
+
+        shouldNotify = true;
       }
 
       if (!liked && existing) {
         await likeRepo.remove(existing);
+
         lockedPost.likeCount = Math.max(0, lockedPost.likeCount - 1);
+
         await postRepo.save(lockedPost);
       }
 
-      const postLikedNotification: CreateNotificationCauseInput = {
-        cause: NotificationCause.POST_LIKED,
-        actorId: userId,
+      return {
+        liked: liked ? Boolean(existing) || shouldNotify : false,
+
+        likeCount: lockedPost.likeCount,
+
+        shouldNotify,
+
         recipientId: lockedPost.authorId,
-        postId: postId,
+
         postPreview: lockedPost.caption,
       };
-
-      await this.notificationService.createFromCause(postLikedNotification);
-
-      return { liked, likeCount: lockedPost.likeCount };
     });
-  }
 
+    if (result.shouldNotify && result.recipientId !== userId) {
+      try {
+        await this.notificationService.createFromCause({
+          cause: NotificationCause.POST_LIKED,
+
+          actorId: userId,
+
+          recipientId: result.recipientId,
+
+          postId,
+
+          postPreview: result.postPreview,
+        });
+      } catch (error: unknown) {
+        this.logger.error(
+          `Failed to create POST_LIKED notification for post ${postId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
+
+    return {
+      liked: result.liked,
+      likeCount: result.likeCount,
+    };
+  }
   async setSaved(
     userId: string,
     postId: string,
@@ -684,10 +740,12 @@ export class PostsService {
 
   async sharePost(userId: string, postId: string, dto: SharePostDto) {
     const post = await this.loadPost(postId);
+
     await this.assertCanViewPost(userId, post);
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const shareRepo = manager.getRepository(PostShare);
+
       const postRepo = manager.getRepository(Post);
 
       let messageId: string;
@@ -695,48 +753,78 @@ export class PostsService {
       if (dto.targetType === PostShareTarget.CHAT) {
         const chat = await manager.getRepository(ChatRoom).findOne({
           where: [
-            { id: dto.targetId, user1Id: userId },
-            { id: dto.targetId, user2Id: userId },
+            {
+              id: dto.targetId,
+              user1Id: userId,
+            },
+            {
+              id: dto.targetId,
+              user2Id: userId,
+            },
           ],
         });
-        if (!chat) throw new ForbiddenException('Chat is not accessible.');
 
-        const message = await manager.getRepository(Message).save(
-          manager.getRepository(Message).create({
+        if (!chat) {
+          throw new ForbiddenException('Chat is not accessible.');
+        }
+
+        const messageRepo = manager.getRepository(Message);
+
+        const message = await messageRepo.save(
+          messageRepo.create({
             message: 'Shared a post',
+
             chatroomId: chat.id,
+
             sid: userId,
+
             status: 'sent',
+
             sharedPostId: postId,
           }),
         );
+
         messageId = message.id;
 
         await manager.getRepository(ChatRoom).update(chat.id, {
           lastMessage: 'Shared a post',
+
           lastMessageDate: new Date(),
         });
       } else {
         const membership = await manager.getRepository(GroupMember).findOne({
-          where: { groupId: dto.targetId, userId },
+          where: {
+            groupId: dto.targetId,
+
+            userId,
+          },
         });
+
         if (!membership) {
           throw new ForbiddenException('Group chat is not accessible.');
         }
 
-        const message = await manager.getRepository(GroupMessage).save(
-          manager.getRepository(GroupMessage).create({
+        const groupMessageRepo = manager.getRepository(GroupMessage);
+
+        const message = await groupMessageRepo.save(
+          groupMessageRepo.create({
             message: 'Shared a post',
+
             groupId: dto.targetId,
+
             senderId: userId,
+
             sharedPostId: postId,
           }),
         );
+
         messageId = message.id;
 
         await manager.getRepository(GroupChat).update(dto.targetId, {
           lastMessage: 'Shared a post',
+
           lastMessageDate: new Date(),
+
           lastMessageSenderId: userId,
         });
       }
@@ -744,34 +832,61 @@ export class PostsService {
       const share = await shareRepo.save(
         shareRepo.create({
           postId,
+
           senderId: userId,
+
           targetType: dto.targetType,
+
           targetId: dto.targetId,
         }),
       );
 
-      await postRepo.increment({ id: postId }, 'shareCount', 1);
-
-      const postSharedNotification: CreateNotificationCauseInput = {
-        cause: NotificationCause.POST_SHARED,
-
-        actorId: userId,
-
-        recipientId: post.authorId,
-
-        postId: postId,
-
-        postPreview: post.caption,
-      };
-
-      await this.notificationService.createFromCause(postSharedNotification);
+      await postRepo.increment(
+        {
+          id: postId,
+        },
+        'shareCount',
+        1,
+      );
 
       return {
-        message: 'Post shared successfully.',
-        code: 201,
-        data: { shareId: share.id, messageId },
+        shareId: share.id,
+        messageId,
       };
     });
+
+    /*
+     * Run notification creation only after
+     * the share transaction commits.
+     */
+    if (post.authorId !== userId) {
+      try {
+        await this.notificationService.createFromCause({
+          cause: NotificationCause.POST_SHARED,
+
+          actorId: userId,
+
+          recipientId: post.authorId,
+
+          postId,
+
+          postPreview: post.caption,
+        });
+      } catch (error: unknown) {
+        this.logger.error(
+          `Failed to create POST_SHARED notification for post ${postId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
+
+    return {
+      message: 'Post shared successfully.',
+
+      code: 201,
+
+      data: result,
+    };
   }
 
   async reportPost(userId: string, postId: string, dto: ReportPostDto) {
