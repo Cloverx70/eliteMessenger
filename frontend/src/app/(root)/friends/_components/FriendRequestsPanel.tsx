@@ -14,9 +14,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import Spinner from "@/app/components/spinner";
 import toaster from "@/app/components/toaster";
+import { useRouter } from "next/navigation";
 
 const FriendRequestsPanel = () => {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const [pendingId, setPendingId] = useState<string | null>(null);
 
@@ -158,7 +160,8 @@ const FriendRequestsPanel = () => {
               return (
                 <article
                   key={requestId ?? index}
-                  className="flex min-h-24 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-customBlack"
+                  onClick={() => router.push(`/profile/${request.username}`)}
+                  className="flex min-h-24 w-full items-center cursor-pointer justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-customBlack"
                 >
                   <div className="flex min-w-0 items-center gap-4">
                     <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 ring-[2.5px] ring-elitePurple dark:bg-neutral-700">
@@ -192,7 +195,11 @@ const FriendRequestsPanel = () => {
                     <button
                       type="button"
                       disabled={requestIsPending}
-                      onClick={() => handleDecline(request.id)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDecline(requestId);
+                      }}
                       className="flex h-9 min-w-24 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
                       {requestIsPending && declinePending ? (
@@ -208,7 +215,11 @@ const FriendRequestsPanel = () => {
                     <button
                       type="button"
                       disabled={requestIsPending}
-                      onClick={() => handleAccept(request.id)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleAccept(requestId);
+                      }}
                       className="flex h-9 min-w-24 items-center justify-center gap-2 rounded-xl bg-elitePurple px-4 text-xs font-semibold text-white transition-transform hover:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {requestIsPending && acceptPending ? (
@@ -260,7 +271,8 @@ const FriendRequestsPanel = () => {
               return (
                 <article
                   key={requestId ?? index}
-                  className="flex min-h-24 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-customBlack"
+                  onClick={() => router.push(`/profile/${request.username}`)}
+                  className="flex min-h-24 w-full cursor-pointer items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-customBlack"
                 >
                   <div className="flex min-w-0 items-center gap-4">
                     <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-200 ring-[2.5px] ring-elitePurple dark:bg-neutral-700">
@@ -293,7 +305,11 @@ const FriendRequestsPanel = () => {
                   <button
                     type="button"
                     disabled={requestIsPending}
-                    onClick={() => handleCancel(request.id)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCancel(request.id);
+                    }}
                     className="flex h-9 min-w-28 items-center justify-center gap-2 rounded-xl border border-red-200 px-4 text-xs font-semibold text-red-500 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-500/30 dark:hover:bg-red-500/10"
                   >
                     {requestIsPending && cancelPending ? (

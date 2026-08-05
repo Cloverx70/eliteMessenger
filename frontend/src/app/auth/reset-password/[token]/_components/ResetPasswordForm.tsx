@@ -1,176 +1,134 @@
 "use client";
 
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormMessage,
-} from "@/components/ui/form";
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-
-import Input from "@/app/components/input";
-import Spinner from "@/app/components/spinner";
-import toaster from "@/app/components/toaster";
-import { useForm } from "react-hook-form";
+import { ArrowRight, LockKeyhole, ShieldCheck, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { verifyResetPassword } from "@/app/auth/actions";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
-const VerifyResetPasswordSchema = z
+import Spinner from "@/app/components/spinner";
+import toaster from "@/app/components/toaster";
+
+import { AuthField } from "../../../_components/AuthField";
+import { verifyResetPassword } from "@/app/auth/actions";
+
+const Schema = z
   .object({
-    newpassword: z
-      .string()
-      .min(8, "New Password must be at least 8 characters long"),
-    confirmnewpassword: z
-      .string()
-      .min(8, "Confirm New Password must be at least 8 characters long"),
+    newpassword: z.string().min(8, "New password must be at least 8 characters"),
+    confirmnewpassword: z.string().min(8, "Confirm password must be at least 8 characters"),
   })
   .refine((data) => data.newpassword === data.confirmnewpassword, {
     message: "Passwords do not match",
-    path: ["NewPassword"],
+    path: ["confirmnewpassword"],
   });
 
-export const ResetPasswordForm = () => {
-  type VerifyResetPasswordInputs = z.infer<typeof VerifyResetPasswordSchema>;
+type Inputs = z.infer<typeof Schema>;
 
+export const ResetPasswordForm = ({
+  token,
+}: {
+  token: string;
+}) => {
   const router = useRouter();
+  const safeToken = token.trim();
 
-  const { token } = useParams();
-
-  const safeToken: string = Array.isArray(token) ? token[0] : (token ?? "");
-
-  useEffect(() => {
-    if (safeToken.length < 100) router.replace("/");
-  }, [safeToken, router]);
-
-  const [showPassword, setShowPassword] = useState({
-    newPassword: false,
-    confirmPassword: false,
-  });
-
-  const FormData = useForm<VerifyResetPasswordInputs>({
-    resolver: zodResolver(VerifyResetPasswordSchema),
+  const form = useForm<Inputs>({
+    resolver: zodResolver(Schema),
     defaultValues: {
       newpassword: "",
       confirmnewpassword: "",
     },
   });
 
-  const { mutate: mutateVerifyPasswordReset, isPending } = useMutation({
-    mutationKey: ["VERIFYRESETPASSWORD"],
-    mutationFn: (data: VerifyResetPasswordInputs) =>
-      verifyResetPassword(safeToken, data.newpassword, data.confirmnewpassword),
-    onError: (e) => {
-      FormData.reset({ newpassword: "", confirmnewpassword: "" });
-      toaster("Error Reset Password", e.message);
-    },
+  const { mutate, isPending } = useMutation({
+    mutationKey: ["VERIFY_RESET_PASSWORD", safeToken],
+    mutationFn: (data: Inputs) =>
+      verifyResetPassword(
+        safeToken,
+        data.newpassword,
+        data.confirmnewpassword,
+      ),
     onSuccess: (data) => {
+      toaster(
+        "Password reset successfully",
+        data?.message ?? "You can now sign in.",
+      );
       router.push("/auth/login");
-      toaster("Password Reset Successfully", data?.message);
+    },
+    onError: (error: unknown) => {
+      toaster(
+        "Could not reset password",
+        error instanceof Error ? error.message : "Reset failed.",
+      );
     },
   });
 
-  const newPasswordValue = FormData.watch("newpassword");
-  const confirmNewPasswordValue = FormData.watch("confirmnewpassword");
+  if (!safeToken) {
+    return (
+      <div className="rounded-[26px] border border-red-200 bg-red-50 p-5 dark:border-red-950 dark:bg-red-950/20">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500 text-white">
+          <TriangleAlert size={23} />
+        </span>
+        <h2 className="mt-4 text-lg font-black text-slate-900 dark:text-white">
+          Invalid reset link
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+          Request a fresh password reset link and try again.
+        </p>
+        <Link
+          href="/auth/reset-password"
+          className="mt-5 flex min-h-11 items-center justify-center rounded-2xl bg-elitePurple px-4 text-xs font-black text-white"
+        >
+          Request another link
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <Form {...FormData}>
-      <form
-        className="w-full h-full flex flex-col items-center justify-between"
-        onSubmit={FormData.handleSubmit((data) =>
-          mutateVerifyPasswordReset(data),
-        )}
-      >
-        <div className="w-full">
-          <h1 className="font-semibold text-customBlack text-xl 2xl:text-2xl xl:text-2xl lg:text-2xl md:text-2xl sm:text-2xl">
-            Reset your <span className=" text-elitePurple">password</span>
-          </h1>
-          <h4 className="text-customBlack font text-sm 2xl:text-base xl:text-base lg:text-base md:text-base sm:text-base">
-            Please fill the following form to reset your password.
-          </h4>
-        </div>
-        <div className="w-full flex flex-col gap-4">
-          <div className="relative">
-            <FormField
-              control={FormData.control}
-              name="newpassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      type={showPassword.newPassword ? "text" : "password"}
-                      label="New Password"
-                    />
-                  </FormControl>
-                  <FormMessage>
-                    {FormData.formState.errors.newpassword?.message}
-                  </FormMessage>
-                </FormItem>
-              )}
-            ></FormField>
+    <form
+      className="w-full space-y-5"
+      noValidate
+      onSubmit={form.handleSubmit((data) => mutate(data))}
+    >
+      <AuthField
+        id="reset-new-password"
+        label="New password"
+        icon={LockKeyhole}
+        type="password"
+        autoComplete="new-password"
+        placeholder="At least 8 characters"
+        error={form.formState.errors.newpassword?.message}
+        {...form.register("newpassword")}
+      />
 
-            {newPasswordValue && (
-              <button
-                className="absolute top-3 right-3 text-gray-500"
-                type="button"
-                onClick={() =>
-                  setShowPassword({
-                    ...showPassword,
-                    newPassword: !showPassword.newPassword,
-                  })
-                }
-              >
-                {showPassword.newPassword ? "hide" : "show"}
-              </button>
-            )}
-          </div>
-          <div className="relative">
-            <FormField
-              control={FormData.control}
-              name="confirmnewpassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      type={showPassword.confirmPassword ? "text" : "password"}
-                      label="Confirm New Password"
-                    />
-                  </FormControl>
-                  <FormMessage>
-                    {FormData.formState.errors.confirmnewpassword?.message}
-                  </FormMessage>
-                </FormItem>
-              )}
-            ></FormField>
-            {confirmNewPasswordValue && (
-              <button
-                className="absolute top-3 right-3 text-gray-500"
-                type="button"
-                onClick={() =>
-                  setShowPassword({
-                    ...showPassword,
-                    confirmPassword: !showPassword.confirmPassword,
-                  })
-                }
-              >
-                {showPassword.confirmPassword ? "hide" : "show"}
-              </button>
-            )}
-          </div>
-        </div>
-        <button
-          type="submit"
-          className=" bg-elitePurple hover:bg-elitePurplePressed delay-100 transition-all ease-linear w-full mt-4 py-1.5 text-sm font-normal text-white"
-          disabled={isPending}
-        >
-          {isPending ? <Spinner /> : "Confirm Reset"}
-        </button>
-      </form>
-    </Form>
+      <AuthField
+        id="reset-confirm-password"
+        label="Confirm new password"
+        icon={ShieldCheck}
+        type="password"
+        autoComplete="new-password"
+        placeholder="Repeat your new password"
+        error={form.formState.errors.confirmnewpassword?.message}
+        {...form.register("confirmnewpassword")}
+      />
+
+      <button
+        type="submit"
+        disabled={isPending}
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-elitePurple px-4 text-sm font-black text-white shadow-lg shadow-elitePurple/20 transition hover:brightness-110 disabled:opacity-60"
+      >
+        {isPending ? (
+          <Spinner />
+        ) : (
+          <>
+            Update password
+            <ArrowRight size={17} />
+          </>
+        )}
+      </button>
+    </form>
   );
 };

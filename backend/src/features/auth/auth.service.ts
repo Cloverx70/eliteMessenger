@@ -40,7 +40,7 @@ export class AuthService {
         throw new BadRequestException('invalid email or password');
       }
 
-      if (!bcrypt.compare(loginUserDto.password, userExists.password)) {
+      if (!(await bcrypt.compare(loginUserDto.password, userExists.password))) {
         userExists.failLoginAttempts += 1;
         await this.userRepo.save(userExists);
         throw new BadRequestException('invalid email or password');
@@ -168,12 +168,12 @@ export class AuthService {
           emailVerified: emails[0]?.verified,
           lastLoggedAt: new Date(),
           accountRegisterType: 'google',
-          isActive: true,
+          isActive: false,
         });
 
-        payload = { id: newUser.id };
+        const savedUser = await this.userRepo.save(newUser);
+        payload = { id: savedUser.id };
       } else if (userExists.accountRegisterType === 'google') {
-        userExists.isActive = true;
         userExists.lastLoggedAt = new Date();
 
         await this.userRepo.save(userExists);

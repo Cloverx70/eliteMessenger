@@ -21,6 +21,10 @@ class MessageAttachmentDto {
 
   @IsOptional()
   size?: number;
+
+  @IsOptional()
+  @IsString()
+  blurDataURL?: string | null;
 }
 
 export default class MessageDto {
@@ -32,6 +36,10 @@ export default class MessageDto {
 
   @IsUUID()
   rid: string;
+
+  @IsOptional()
+  @IsUUID()
+  sharedPostId?: string;
 
   @IsString()
   text: string;

@@ -1,4 +1,12 @@
 import {
+  ForbiddenException,
+  InternalServerErrorException,
+  UnauthorizedException,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
@@ -7,110 +15,184 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { ForbiddenException, UsePipes, ValidationPipe } from '@nestjs/common';
+import * as cookie from 'cookie';
 import { Server, Socket } from 'socket.io';
 
 import { ChatService } from './chat.service';
-import MessageDto from './dtos/message.dto';
-import { GroupMessageDto } from './dtos/group-message.dto';
 import { GroupChatService } from './group-chat.service';
-import { S3Service } from '../../utils/s3/s3.service';
+import { GroupMessageDto } from './dtos/group-message.dto';
+import MessageDto from './dtos/message.dto';
 
-@WebSocketGateway(3001, {
+type SocketJwtPayload = {
+  id?: string;
+};
+
+type PresenceUpdate = {
+  userId: string;
+  isActive: boolean;
+  lastSeen: string | null;
+};
+
+const AUTH_COOKIE_NAME = 'ELITE_ERA_AUTH_TOKEN';
+const DISCONNECT_GRACE_MS = 5_000;
+
+const allowedSocketOrigins = (
+  process.env.FRONT_BASE_URLS ??
+  process.env.FRONT_BASE_URL ??
+  'http://localhost:8000'
+)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+@WebSocketGateway({
   cors: {
-    origin: 'http://localhost:8000',
+    origin: allowedSocketOrigins,
     credentials: true,
   },
+  transports: ['websocket', 'polling'],
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly chatService: ChatService,
     private readonly groupChatService: GroupChatService,
-    private readonly s3Service: S3Service,
+    private readonly jwtService: JwtService,
   ) {}
 
   private readonly onlineUsers = new Map<string, Set<string>>();
   private readonly socketUsers = new Map<string, string>();
+  private readonly disconnectTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
 
   @WebSocketServer()
   server: Server;
 
-  private directRoom(roomId: string) {
+  private directRoom(roomId: string): string {
     return `dm:${roomId}`;
   }
 
-  private groupRoom(groupId: string) {
+  private groupRoom(groupId: string): string {
     return `group:${groupId}`;
   }
 
-  private registerSocket(userId: string, socketId: string) {
+  private getAuthenticatedUserId(client: Socket): string {
+    const rawCookie = client.handshake.headers.cookie;
+
+    if (!rawCookie) {
+      throw new UnauthorizedException('Authentication cookie is missing');
+    }
+
+    const parsedCookies = cookie.parse(rawCookie);
+    const token = parsedCookies[AUTH_COOKIE_NAME];
+
+    if (!token) {
+      throw new UnauthorizedException('Authentication token is missing');
+    }
+
+    const secret = process.env.JWT_SECRET;
+
+    if (!secret) {
+      throw new InternalServerErrorException('JWT_SECRET is not configured');
+    }
+
+    const payload = this.jwtService.verify<SocketJwtPayload>(token, {
+      secret,
+    });
+
+    if (!payload.id) {
+      throw new UnauthorizedException('Invalid authentication token');
+    }
+
+    return payload.id;
+  }
+
+  private cancelPendingDisconnect(userId: string): boolean {
+    const pendingTimer = this.disconnectTimers.get(userId);
+
+    if (!pendingTimer) {
+      return false;
+    }
+
+    clearTimeout(pendingTimer);
+    this.disconnectTimers.delete(userId);
+
+    return true;
+  }
+
+  private registerSocket(userId: string, socketId: string): boolean {
     const sockets = this.onlineUsers.get(userId) ?? new Set<string>();
+    const wasOffline = sockets.size === 0;
+
     sockets.add(socketId);
 
     this.onlineUsers.set(userId, sockets);
     this.socketUsers.set(socketId, userId);
+
+    return wasOffline;
   }
 
-  private removeSocket(socketId: string) {
+  private removeSocket(
+    socketId: string,
+  ): { userId: string; hasRemainingSockets: boolean } | null {
     const userId = this.socketUsers.get(socketId);
-    if (!userId) return null;
+
+    if (!userId) {
+      return null;
+    }
 
     const sockets = this.onlineUsers.get(userId);
     sockets?.delete(socketId);
 
-    if (!sockets || sockets.size === 0) {
-      this.onlineUsers.delete(userId);
-    } else {
+    const hasRemainingSockets = Boolean(sockets && sockets.size > 0);
+
+    if (hasRemainingSockets && sockets) {
       this.onlineUsers.set(userId, sockets);
+    } else {
+      this.onlineUsers.delete(userId);
     }
 
     this.socketUsers.delete(socketId);
-    return userId;
+
+    return {
+      userId,
+      hasRemainingSockets,
+    };
   }
 
-  private getSocketUserId(client: Socket) {
+  private getSocketUserId(client: Socket): string | undefined {
     return this.socketUsers.get(client.id);
   }
 
-  private isUserOnline(userId: string) {
+  private isUserOnline(userId: string): boolean {
     return (this.onlineUsers.get(userId)?.size ?? 0) > 0;
   }
 
-  private emitToUser(userId: string, event: string, payload: unknown) {
+  private emitPresenceUpdate(payload: PresenceUpdate): void {
+    this.server.emit('presence:update', payload);
+  }
+
+  private emitToUser(userId: string, event: string, payload: unknown): void {
     const socketIds = this.onlineUsers.get(userId);
-    if (!socketIds) return;
+
+    if (!socketIds) {
+      return;
+    }
 
     for (const socketId of socketIds) {
       this.server.to(socketId).emit(event, payload);
     }
   }
 
-  handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
-  }
-
-  async handleDisconnect(client: Socket) {
-    const userId = this.removeSocket(client.id);
-
-    if (userId && !this.isUserOnline(userId)) {
-      await this.chatService.updateUserActivity(userId, false);
-      console.log(`User ${userId} disconnected`);
-    }
-  }
-
-  @SubscribeMessage('join')
-  async handleJoin(
-    @MessageBody() userId: string,
-    @ConnectedSocket() client: Socket,
-  ) {
-    this.registerSocket(userId, client.id);
-    await this.chatService.updateUserActivity(userId, true);
-
+  private async processPendingDeliveries(userId: string): Promise<void> {
     const deliveredDirectMessages =
       (await this.chatService.markMessagesDelivered(userId)) ?? [];
 
     for (const message of deliveredDirectMessages) {
-      if (!message.sid) continue;
+      if (!message.sid) {
+        continue;
+      }
 
       this.emitToUser(message.sid, 'message-delivered-ack', {
         messageId: message.id,
@@ -122,7 +204,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       (await this.groupChatService.MarkPendingMessagesDelivered(userId)) ?? [];
 
     for (const acknowledgement of deliveredGroupMessages) {
-      if (!acknowledgement.senderId) continue;
+      if (!acknowledgement.senderId) {
+        continue;
+      }
 
       this.emitToUser(
         acknowledgement.senderId,
@@ -132,14 +216,87 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  async handleConnection(client: Socket): Promise<void> {
+    try {
+      const userId = this.getAuthenticatedUserId(client);
+      const reconnectedDuringGracePeriod = this.cancelPendingDisconnect(userId);
+      const firstActiveSocket = this.registerSocket(userId, client.id);
+
+      client.data.userId = userId;
+
+      if (firstActiveSocket && !reconnectedDuringGracePeriod) {
+        const presence = await this.chatService.updateUserActivity(userId, true);
+        this.emitPresenceUpdate(presence);
+      }
+
+      if (firstActiveSocket) {
+        await this.processPendingDeliveries(userId);
+      }
+
+      console.log(`User ${userId} connected through socket ${client.id}`);
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Socket authentication failed';
+
+      client.emit('errorMessage', {
+        message,
+      });
+
+      client.disconnect(true);
+    }
+  }
+
+  handleDisconnect(client: Socket): void {
+    const removed = this.removeSocket(client.id);
+
+    if (!removed || removed.hasRemainingSockets) {
+      return;
+    }
+
+    const { userId } = removed;
+
+    this.cancelPendingDisconnect(userId);
+
+    const timer = setTimeout(() => {
+      void (async () => {
+        this.disconnectTimers.delete(userId);
+
+        if (this.isUserOnline(userId)) {
+          return;
+        }
+
+        try {
+          const presence = await this.chatService.updateUserActivity(
+            userId,
+            false,
+          );
+
+          this.emitPresenceUpdate(presence);
+
+          console.log(`User ${userId} is offline`);
+        } catch (error: unknown) {
+          console.error(
+            `Could not mark user ${userId} offline`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      })();
+    }, DISCONNECT_GRACE_MS);
+
+    this.disconnectTimers.set(userId, timer);
+  }
+
   @SubscribeMessage('joinRoom')
   handleJoinRoom(
     @MessageBody() payload: { roomId: string; userId: string },
     @ConnectedSocket() client: Socket,
-  ) {
+  ): void {
     const socketUserId = this.getSocketUserId(client);
+
     if (!socketUserId || socketUserId !== payload.userId) {
-      client.emit('errorMessage', { message: 'Invalid socket user' });
+      client.emit('errorMessage', {
+        message: 'Invalid socket user',
+      });
       return;
     }
 
@@ -150,9 +307,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleLeaveRoom(
     @MessageBody() payload: { roomId: string; userId: string },
     @ConnectedSocket() client: Socket,
-  ) {
+  ): void {
     const socketUserId = this.getSocketUserId(client);
-    if (!socketUserId || socketUserId !== payload.userId) return;
+
+    if (!socketUserId || socketUserId !== payload.userId) {
+      return;
+    }
 
     client.leave(this.directRoom(payload.roomId));
   }
@@ -161,18 +321,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleJoinGroupRoom(
     @MessageBody() payload: { groupId: string; userId: string },
     @ConnectedSocket() client: Socket,
-  ) {
+  ): Promise<void> {
     try {
       const socketUserId = this.getSocketUserId(client);
+
       if (!socketUserId || socketUserId !== payload.userId) {
         throw new ForbiddenException('Invalid socket user');
       }
 
       await this.groupChatService.EnsureMember(payload.groupId, socketUserId);
       client.join(this.groupRoom(payload.groupId));
-    } catch (error: any) {
+    } catch (error: unknown) {
       client.emit('errorMessage', {
-        message: error.message || 'Unable to join group room',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to join group room',
       });
     }
   }
@@ -181,9 +345,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleLeaveGroupRoom(
     @MessageBody() payload: { groupId: string; userId: string },
     @ConnectedSocket() client: Socket,
-  ) {
+  ): void {
     const socketUserId = this.getSocketUserId(client);
-    if (!socketUserId || socketUserId !== payload.userId) return;
+
+    if (!socketUserId || socketUserId !== payload.userId) {
+      return;
+    }
 
     client.leave(this.groupRoom(payload.groupId));
   }
@@ -192,9 +359,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleMessageSeen(
     @MessageBody() payload: { crid: string; sid: string },
     @ConnectedSocket() client: Socket,
-  ) {
+  ): Promise<void> {
     try {
       const socketUserId = this.getSocketUserId(client);
+
       if (!socketUserId || socketUserId !== payload.sid) {
         throw new ForbiddenException('Invalid socket user');
       }
@@ -206,14 +374,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         )) ?? [];
 
       for (const message of messages) {
-        if (!message.sid) continue;
+        if (!message.sid) {
+          continue;
+        }
 
         this.emitToUser(message.sid, 'message-seen-ack', {
           messageId: message.id,
         });
       }
-    } catch (error: any) {
-      client.emit('errorMessage', { message: error.message });
+    } catch (error: unknown) {
+      client.emit('errorMessage', {
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to mark messages seen',
+      });
     }
   }
 
@@ -228,21 +403,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleSendMessage(
     @MessageBody() dto: MessageDto,
     @ConnectedSocket() client: Socket,
-  ) {
+  ): Promise<void> {
     try {
       const socketUserId = this.getSocketUserId(client);
+
       if (!socketUserId || socketUserId !== dto.sid) {
         throw new ForbiddenException('Invalid socket user');
       }
 
       const result = await this.chatService.SendMessage(dto.crid, dto);
-      const savedMessage = result.newMessage;
 
-      if ((savedMessage.attachments?.length ?? 0) > 0) {
-        for (const attachment of savedMessage.attachments) {
-          attachment.url = await this.s3Service.getFileUrl(attachment.key);
-        }
+      if (!result?.newMessage) {
+        throw new InternalServerErrorException('Message could not be created');
       }
+
+      const savedMessage = result.newMessage;
 
       client.emit('message-sent-ack', {
         tempId: dto.tempId,
@@ -250,14 +425,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
 
       if (this.isUserOnline(dto.rid)) {
-        this.emitToUser(dto.rid, 'receiveMessage', {
-          ...savedMessage,
-          tempId: dto.tempId,
-        });
-
         await this.chatService.updateMessageStatus(savedMessage.id, {
           status: 'delivered',
         });
+
+        const deliveredMessage = {
+          ...savedMessage,
+          status: 'delivered' as const,
+          tempId: dto.tempId,
+        };
+
+        this.emitToUser(dto.rid, 'receiveMessage', deliveredMessage);
 
         client.emit('message-delivered-ack', {
           messageId: savedMessage.id,
@@ -265,11 +443,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           status: 'delivered',
         });
 
-        this.emitToUser(dto.rid, 'new-message-notification', savedMessage);
+        this.emitToUser(dto.rid, 'new-message-notification', deliveredMessage);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       client.emit('errorMessage', {
-        message: error.message || 'Internal Server Error',
+        message:
+          error instanceof Error ? error.message : 'Internal Server Error',
       });
     }
   }
@@ -285,14 +464,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleSendGroupMessage(
     @MessageBody() dto: GroupMessageDto,
     @ConnectedSocket() client: Socket,
-  ) {
+  ): Promise<void> {
     try {
       const socketUserId = this.getSocketUserId(client);
+
       if (!socketUserId || socketUserId !== dto.sid) {
         throw new ForbiddenException('Invalid socket user');
       }
 
       const result = await this.groupChatService.SendMessage(dto);
+
+      if (!result?.newMessage) {
+        throw new InternalServerErrorException(
+          'Group message could not be created',
+        );
+      }
 
       client.emit('group-message-sent-ack', {
         tempId: dto.tempId,
@@ -326,9 +512,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         groupId: dto.gid,
         ...receiptSummary,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       client.emit('errorMessage', {
-        message: error.message || 'Internal Server Error',
+        message:
+          error instanceof Error ? error.message : 'Internal Server Error',
       });
     }
   }
@@ -337,9 +524,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleGroupMessagesSeen(
     @MessageBody() payload: { groupId: string; userId: string },
     @ConnectedSocket() client: Socket,
-  ) {
+  ): Promise<void> {
     try {
       const socketUserId = this.getSocketUserId(client);
+
       if (!socketUserId || socketUserId !== payload.userId) {
         throw new ForbiddenException('Invalid socket user');
       }
@@ -351,7 +539,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         )) ?? [];
 
       for (const acknowledgement of acknowledgements) {
-        if (!acknowledgement.senderId) continue;
+        if (!acknowledgement.senderId) {
+          continue;
+        }
 
         this.emitToUser(
           acknowledgement.senderId,
@@ -359,9 +549,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           acknowledgement,
         );
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       client.emit('errorMessage', {
-        message: error.message || 'Unable to mark group messages as seen',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to mark group messages seen',
       });
     }
   }

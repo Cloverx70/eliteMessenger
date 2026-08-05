@@ -13,10 +13,10 @@ import {
 } from 'typeorm';
 
 import { Message } from './message.entity';
-import { User } from './user.entity'; // your User entity path
+import { User } from './user.entity';
 
 @Entity('chatroom')
-@Unique(['user1', 'user2']) // ensures no duplicate room between same two users
+@Unique(['user1', 'user2'])
 @Index('idx_user2_user1', ['user2Id', 'user1Id'])
 @Index('idx_user1_user2', ['user1Id', 'user2Id'])
 export class ChatRoom {

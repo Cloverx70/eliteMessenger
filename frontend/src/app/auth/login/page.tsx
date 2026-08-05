@@ -1,17 +1,25 @@
+import type { Metadata } from "next";
+
+import AuthShell from "../_components/AuthShell";
 import { LoginForm } from "./_components/loginForm";
+
+export const metadata: Metadata = {
+  title: "Log In",
+  description:
+    "Log in to Elite Messenger to access your conversations, friends, groups, media, and notifications.",
+};
 
 export default function LoginPage() {
   return (
-    <section className=" w-full h-screen bg-gray-100 flex items-center justify-center">
-      <div className="w-full rounded-none md:w-[40%] lg:w-[40%] xl:w-[40%] 2xl:w-[40%] h-auto  bg-white shadow-xl flex flex-col justify-between items-start gap-10 p-5">
-        <h1 className="text-sm md:text-2xl lg:text-2xl xl:text-2xl 2xl:text-2xl  text-customBlack">
-          <span className="text-elitePurple font-bold text-3xl">
-            Welcome back!
-          </span>
-          <br /> Your next great chat is just a login away.
-        </h1>
-        <LoginForm />
-      </div>
-    </section>
+    <AuthShell
+      badge="Welcome back"
+      title="Pick up where you left off."
+      description="Sign in to continue your conversations and reconnect with your people."
+      footerText="New to Elite Messenger?"
+      footerLinkLabel="Create an account"
+      footerLinkHref="/auth/register"
+    >
+      <LoginForm />
+    </AuthShell>
   );
 }

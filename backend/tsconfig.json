@@ -9,6 +9,7 @@
     "target": "ES2021",
     "sourceMap": true,
     "outDir": "./dist",
+    "esModuleInterop": true,
     "types": ["node", "multer"],
     "incremental": true,
     "skipLibCheck": true,

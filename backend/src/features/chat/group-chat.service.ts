@@ -26,7 +26,13 @@ import { User } from '../../database/entities/user.entity';
 import { handleError } from '../../utils/handleError.util';
 import { isValidUrl } from '../../utils/isValidURL';
 import { S3Service } from '../../utils/s3/s3.service';
-
+import {
+  CreateNotificationCauseInput,
+  NotificationCause,
+  NotificationsService,
+} from '../notifications/notifications.service';
+import { group } from 'console';
+import { Friends, FriendStatus } from '../../database/entities/friends.entity';
 export type GroupMessageStatus = 'sent' | 'delivered' | 'seen';
 
 export type GroupReceiptSummary = {
@@ -51,19 +57,42 @@ export class GroupChatService {
     private readonly userRepo: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly s3Service: S3Service,
+    private readonly notificationService: NotificationsService,
   ) {}
 
-  private safeUser(user?: User | null) {
+  private async hydrateUserPfp(user?: User | null): Promise<User | null> {
     if (!user) return null;
 
+    const storedValue = user.userPfpUrl;
+
+    if (!storedValue) {
+      user.userPfpUrl = null;
+      return user;
+    }
+
+    if (/^https?:\/\//i.test(storedValue)) {
+      return user;
+    }
+
+    const { url } = await this.s3Service.getFileUrl(storedValue);
+    user.userPfpUrl = url;
+
+    return user;
+  }
+
+  private async safeUser(user?: User | null) {
+    const hydratedUser = await this.hydrateUserPfp(user);
+
+    if (!hydratedUser) return null;
+
     return {
-      id: user.id,
-      username: user.username,
-      firstname: user.firstname,
-      lastname: user.lastname,
-      userPfpUrl: user.userPfpUrl,
-      isActive: user.isActive,
-      lastSeen: user.lastSeen,
+      id: hydratedUser.id,
+      username: hydratedUser.username,
+      firstname: hydratedUser.firstname,
+      lastname: hydratedUser.lastname,
+      userPfpUrl: hydratedUser.userPfpUrl ?? null,
+      isActive: hydratedUser.isActive,
+      lastSeen: hydratedUser.lastSeen ?? null,
     };
   }
 
@@ -136,16 +165,21 @@ export class GroupChatService {
       (message.receipts
         ? {
             totalRecipients: message.receipts.length,
+
             deliveredCount: message.receipts.filter((receipt) =>
               Boolean(receipt.deliveredAt),
             ).length,
+
             seenCount: message.receipts.filter((receipt) =>
               Boolean(receipt.seenAt),
             ).length,
+
             status: this.statusFromCounts(
               message.receipts.length,
+
               message.receipts.filter((receipt) => Boolean(receipt.deliveredAt))
                 .length,
+
               message.receipts.filter((receipt) => Boolean(receipt.seenAt))
                 .length,
             ),
@@ -153,32 +187,80 @@ export class GroupChatService {
         : await this.GetMessageReceiptSummary(message.id));
 
     const attachments = await Promise.all(
-      (message.attachments ?? []).map(async (attachment) => ({
-        id: attachment.id,
-        key: attachment.key,
-        type: attachment.type,
-        size: attachment.size,
-        createdAt: attachment.createdAt,
-        url: await this.s3Service.getFileUrl(attachment.key),
-      })),
+      (message.attachments ?? []).map(async (attachment) => {
+        const { url } = await this.s3Service.getFileUrl(attachment.key);
+
+        return {
+          id: attachment.id,
+          type: attachment.type,
+          size: attachment.size ?? null,
+          createdAt: attachment.createdAt,
+          url,
+        };
+      }),
     );
+
+    const sharedPost = message.sharedPost
+      ? {
+          id: message.sharedPost.id,
+          authorId: message.sharedPost.authorId,
+          caption: message.sharedPost.caption,
+          visibility: message.sharedPost.visibility,
+          commentsEnabled: message.sharedPost.commentsEnabled,
+
+          likeCount: message.sharedPost.likeCount,
+          commentCount: message.sharedPost.commentCount,
+          shareCount: message.sharedPost.shareCount,
+
+          createdAt: message.sharedPost.createdAt,
+          updatedAt: message.sharedPost.updatedAt,
+
+          author: await this.safeUser(message.sharedPost.author),
+
+          attachments: await Promise.all(
+            [...(message.sharedPost.attachments ?? [])]
+              .sort(
+                (firstAttachment, secondAttachment) =>
+                  firstAttachment.displayOrder - secondAttachment.displayOrder,
+              )
+              .map(async (attachment) => {
+                const { url } = await this.s3Service.getFileUrl(attachment.key);
+
+                const { key, post, ...safeAttachment } = attachment;
+
+                return {
+                  ...safeAttachment,
+                  url,
+                };
+              }),
+          ),
+        }
+      : null;
 
     return {
       id: message.id,
       message: message.message ?? '',
+
       groupId: message.groupId,
+
       senderId: message.senderId ?? null,
       sid: message.senderId ?? null,
-      sender: this.safeUser(message.sender),
+
+      sender: await this.safeUser(message.sender),
+
       attachments,
+
+      sharedPostId: message.sharedPostId ?? null,
+      sharedPost,
+
       status: summary.status,
       receiptSummary: summary,
+
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,
       deletedAt: message.deletedAt ?? null,
     };
   }
-
   async CreateGroup(creatorId: string, dto: CreateGroupDto) {
     try {
       const uniqueMemberIds = [...new Set(dto.memberIds)].filter(
@@ -229,6 +311,18 @@ export class GroupChatService {
         await manager.save(GroupMember, memberships);
         return savedGroup;
       });
+
+      for (const memberId of uniqueMemberIds) {
+        const groupAddedNotification: CreateNotificationCauseInput = {
+          cause: NotificationCause.GROUP_ADDED,
+          actorId: creatorId,
+          recipientId: memberId,
+          groupId: group.id,
+          groupName: group.name,
+        };
+
+        await this.notificationService.createFromCause(groupAddedNotification);
+      }
 
       return {
         message: 'Group created successfully',
@@ -333,9 +427,15 @@ export class GroupChatService {
         ? await this.userRepo.find({ where: { id: In(senderIds) } })
         : [];
 
-      const senderMap = new Map(
-        lastSenders.map((sender) => [sender.id, this.safeUser(sender)]),
+      const senderEntries = await Promise.all(
+        lastSenders.map(async (sender) => {
+          const safeSender = await this.safeUser(sender);
+
+          return [sender.id, safeSender] as const;
+        }),
       );
+
+      const senderMap = new Map(senderEntries);
 
       let result = groups.map((group) => ({
         id: group.id,
@@ -420,13 +520,25 @@ export class GroupChatService {
       const safePage = Math.max(Number(page) || 1, 1);
 
       const [messages, total] = await this.messageRepo.findAndCount({
-        where: { groupId },
+        where: {
+          groupId,
+        },
+
         relations: {
           attachments: true,
           sender: true,
           receipts: true,
+
+          sharedPost: {
+            author: true,
+            attachments: true,
+          },
         },
-        order: { createdAt: 'ASC' },
+
+        order: {
+          createdAt: 'ASC',
+        },
+
         skip: (safePage - 1) * safeLimit,
         take: safeLimit,
       });
@@ -495,7 +607,7 @@ export class GroupChatService {
 
         for (const attachment of message.attachments ?? []) {
           media.push({
-            url: await this.s3Service.getFileUrl(attachment.key),
+            url: (await this.s3Service.getFileUrl(attachment.key)).url,
             type: attachment.type,
           });
         }
@@ -518,14 +630,16 @@ export class GroupChatService {
             createdAt: group.createdAt,
             updatedAt: group.updatedAt,
           },
-          members: memberships.map((membership) => ({
-            id: membership.id,
-            groupId: membership.groupId,
-            userId: membership.userId,
-            role: membership.role,
-            joinedAt: membership.joinedAt,
-            user: this.safeUser(membership.user),
-          })),
+          members: await Promise.all(
+            memberships.map(async (membership) => ({
+              id: membership.id,
+              groupId: membership.groupId,
+              userId: membership.userId,
+              role: membership.role,
+              joinedAt: membership.joinedAt,
+              user: await this.safeUser(membership.user),
+            })),
+          ),
           media,
           links,
         },
@@ -592,6 +706,18 @@ export class GroupChatService {
         await this.memberRepo.save(newMemberships);
       }
 
+      for (const member of newMemberships) {
+        const groupAddedNotification: CreateNotificationCauseInput = {
+          cause: NotificationCause.GROUP_ADDED,
+          actorId: actorId,
+          recipientId: member.id,
+          groupId: groupId,
+          groupName: group.name,
+        };
+
+        await this.notificationService.createFromCause(groupAddedNotification);
+      }
+
       return {
         message: 'Members added successfully',
         code: 200,
@@ -626,12 +752,23 @@ export class GroupChatService {
 
       await this.memberRepo.remove(target);
 
+      const groupRoleUpdatedNotification: CreateNotificationCauseInput = {
+        cause: NotificationCause.GROUP_REMOVED,
+        actorId: actorId,
+        recipientId: memberUserId,
+        groupId: groupId,
+        groupName: group.name,
+      };
+
+      await this.notificationService.createFromCause(
+        groupRoleUpdatedNotification,
+      );
+
       return { message: 'Member removed successfully', code: 200 };
     } catch (error: any) {
       handleError(error);
     }
   }
-
   async UpdateMemberRole(
     actorId: string,
     groupId: string,
@@ -640,17 +777,23 @@ export class GroupChatService {
   ) {
     try {
       const actor = await this.EnsureMember(groupId, actorId);
+
       const target = await this.memberRepo.findOneBy({
         groupId,
         userId: memberUserId,
       });
 
-      if (!target) throw new NotFoundException('Group member not found');
+      if (!target) {
+        throw new NotFoundException('Group member not found');
+      }
+
+      const previousRole = target.role;
 
       if (dto.role === GroupMemberRole.OWNER) {
         if (actor.role !== GroupMemberRole.OWNER) {
           throw new ForbiddenException('Only the owner can transfer ownership');
         }
+
         if (actor.userId === target.userId) {
           return {
             message: 'User is already the group owner',
@@ -658,17 +801,45 @@ export class GroupChatService {
           };
         }
 
+        const group = await this.groupRepo.findOne({
+          where: {
+            id: groupId,
+          },
+        });
+
+        if (!group) {
+          throw new NotFoundException('Group not found');
+        }
+
         await this.dataSource.transaction(async (manager) => {
           actor.role = GroupMemberRole.ADMIN;
+
           target.role = GroupMemberRole.OWNER;
 
           await manager.save(GroupMember, [actor, target]);
+
           await manager.update(GroupChat, groupId, {
             creatorId: target.userId,
           });
         });
 
-        return { message: 'Ownership transferred successfully', code: 200 };
+        await this.notificationService.createFromCause({
+          cause: NotificationCause.GROUP_ROLE_UPDATED,
+
+          actorId: actor.userId,
+          recipientId: target.userId,
+
+          groupId,
+          groupName: group.name,
+
+          previousRole,
+          newRole: GroupMemberRole.OWNER,
+        });
+
+        return {
+          message: 'Ownership transferred successfully',
+          code: 200,
+        };
       }
 
       if (actor.role !== GroupMemberRole.OWNER) {
@@ -681,15 +852,52 @@ export class GroupChatService {
         );
       }
 
+      if (previousRole === dto.role) {
+        return {
+          message: 'Member already has this role',
+          code: 200,
+        };
+      }
+
+      const group = await this.groupRepo.findOne({
+        where: {
+          id: groupId,
+        },
+      });
+
+      if (!group) {
+        throw new NotFoundException('Group not found');
+      }
+
       target.role = dto.role;
+
       await this.memberRepo.save(target);
 
-      return { message: 'Member role updated successfully', code: 200 };
+      const notification: CreateNotificationCauseInput = {
+        cause: NotificationCause.GROUP_ROLE_UPDATED,
+
+        actorId: actor.userId,
+        recipientId: target.userId,
+
+        groupId,
+        groupName: group.name,
+
+        previousRole,
+
+        newRole: dto.role,
+      };
+
+      await this.notificationService.createFromCause(notification);
+
+      return {
+        message: 'Member role updated successfully',
+        code: 200,
+      };
     } catch (error: any) {
       handleError(error);
+      throw error;
     }
   }
-
   async LeaveGroup(userId: string, groupId: string) {
     try {
       const membership = await this.EnsureMember(groupId, userId);
@@ -792,11 +1000,19 @@ export class GroupChatService {
         await manager.save(GroupChat, group);
 
         const completeMessage = await manager.findOne(GroupMessage, {
-          where: { id: savedMessage.id },
+          where: {
+            id: savedMessage.id,
+          },
+
           relations: {
             attachments: true,
             sender: true,
             receipts: true,
+
+            sharedPost: {
+              author: true,
+              attachments: true,
+            },
           },
         });
 
@@ -974,8 +1190,28 @@ export class GroupChatService {
 
   async GetAvailableUsers(currentUserId: string, query: string = '') {
     try {
+      const normalizedQuery = query.trim();
+
       const queryBuilder = this.userRepo
         .createQueryBuilder('user')
+        .innerJoin(
+          Friends,
+          'friend',
+          `
+            (
+              friend.user1Id = :currentUserId
+              AND friend.user2Id = user.id
+            )
+            OR
+            (
+              friend.user2Id = :currentUserId
+              AND friend.user1Id = user.id
+            )
+          `,
+          {
+            currentUserId,
+          },
+        )
         .select([
           'user.id',
           'user.username',
@@ -985,22 +1221,30 @@ export class GroupChatService {
           'user.isActive',
           'user.lastSeen',
         ])
-        .where('user.id != :currentUserId', {
+        .where('friend.status = :friendStatus', {
+          friendStatus: FriendStatus.ACCEPTED,
+        })
+        .andWhere('user.id != :currentUserId', {
           currentUserId,
         })
+        .distinct(true)
         .orderBy('user.username', 'ASC')
         .take(50);
 
-      const normalizedQuery = query.trim();
-
       if (normalizedQuery) {
         queryBuilder.andWhere(
-          `(
-          user.username LIKE :query
-          OR user.firstname LIKE :query
-          OR user.lastname LIKE :query
-          OR CONCAT(user.firstname, ' ', user.lastname) LIKE :query
-        )`,
+          `
+          (
+            user.username LIKE :query
+            OR user.firstname LIKE :query
+            OR user.lastname LIKE :query
+            OR CONCAT(
+              user.firstname,
+              ' ',
+              user.lastname
+            ) LIKE :query
+          )
+        `,
           {
             query: `%${normalizedQuery}%`,
           },
@@ -1009,13 +1253,18 @@ export class GroupChatService {
 
       const users = await queryBuilder.getMany();
 
+      const safeUsers = await Promise.all(
+        users.map((user) => this.safeUser(user)),
+      );
+
       return {
-        message: 'Available users returned successfully',
+        message: 'Available friends returned successfully',
         code: 200,
-        data: users.map((user) => this.safeUser(user)),
+        data: safeUsers,
       };
     } catch (error: any) {
       handleError(error);
+      throw error;
     }
   }
 }

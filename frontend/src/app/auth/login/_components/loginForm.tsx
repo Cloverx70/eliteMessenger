@@ -1,119 +1,101 @@
 "use client";
 
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormMessage,
-} from "@/components/ui/form";
-
-import Input from "@/app/components/input";
-import Spinner from "@/app/components/spinner";
-import { login } from "../../actions";
-import toaster from "@/app/components/toaster";
-import { useForm } from "react-hook-form";
-import { useMutation } from "@tanstack/react-query";
+import Link from "next/link";
+import { ArrowRight, LockKeyhole, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+import Spinner from "@/app/components/spinner";
+import toaster from "@/app/components/toaster";
+
+import { AuthField } from "../../_components/AuthField";
+import { login } from "../../actions";
+
 const LoginSchema = z.object({
-  email: z
-    .string()
-    .email("value must be type of email")
-    .nonempty("Email cannot be empty"),
+  email: z.string().trim().min(1, "Email cannot be empty").email("Enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
+
+type LoginInputs = z.infer<typeof LoginSchema>;
 
 export const LoginForm = () => {
   const router = useRouter();
 
-  type LoginInputs = z.infer<typeof LoginSchema>;
-
-  const LoginForm = useForm<LoginInputs>({
+  const form = useForm<LoginInputs>({
     resolver: zodResolver(LoginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
+    defaultValues: { email: "", password: "" },
   });
 
-  const { mutate: LoginMutate, isPending } = useMutation({
+  const { mutate, isPending } = useMutation({
     mutationKey: ["LOGIN"],
     mutationFn: (data: LoginInputs) => login(data.email, data.password),
     onSuccess: () => {
+      toaster("Success", "Logged in successfully.");
       router.push("/");
-      toaster("Success", "Logged in successfully..");
     },
-    onError: (e) => {
-      toaster("Error Logging in", e.message);
-      LoginForm.reset();
+    onError: (error: unknown) => {
+      toaster(
+        "Error logging in",
+        error instanceof Error ? error.message : "Could not log in.",
+      );
     },
   });
 
   return (
-    <Form {...LoginForm}>
-      <form
-        className="flex flex-col gap-5 w-full"
-        onSubmit={LoginForm.handleSubmit((data) => LoginMutate(data))}
-      >
-        <FormField
-          name="email"
-          control={LoginForm.control}
-          render={({ field }) => (
-            <FormItem>
-              <FormControl>
-                <Input label="Email" type="email" {...field} />
-              </FormControl>
-              <FormMessage>
-                {LoginForm.formState.errors.email?.message}
-              </FormMessage>
-            </FormItem>
-          )}
-        />
-        <FormField
-          name="password"
-          control={LoginForm.control}
-          render={({ field }) => (
-            <FormItem>
-              <FormControl>
-                <Input label="Password" type="password" {...field} />
-              </FormControl>
-              <FormMessage>
-                {LoginForm.formState.errors.password?.message}
-              </FormMessage>
-            </FormItem>
-          )}
-        />
-        <div className=" w-full flex items-center justify-between">
-          <p className=" text-xs text-customBlack">
-            Forgot your password?{" "}
-            <span
-              className=" text-gray-500 cursor-pointer"
-              onClick={() => router.push("/auth/reset-password")}
-            >
-              Reset it here
-            </span>
-          </p>
-          <p className="text-xs text-customBlack">
-            Don’t have an account?{" "}
-            <span
-              className="text-gray-500 cursor-pointer"
-              onClick={() => router.push("/auth/register")}
-            >
-              Register here
-            </span>
-          </p>
-        </div>
-        <button
-          type="submit"
-          disabled={isPending}
-          className="w-full h-8 flex items-center justify-center bg-elitePurple hover:bg-elitePurplePressed delay-100 ease-linear transition-all text-white rounded"
+    <form
+      className="w-full space-y-5"
+      noValidate
+      onSubmit={form.handleSubmit((data) => mutate(data))}
+    >
+      <AuthField
+        id="login-email"
+        label="Email address"
+        icon={Mail}
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        placeholder="you@example.com"
+        error={form.formState.errors.email?.message}
+        {...form.register("email")}
+      />
+
+      <AuthField
+        id="login-password"
+        label="Password"
+        icon={LockKeyhole}
+        type="password"
+        autoComplete="current-password"
+        placeholder="Enter your password"
+        error={form.formState.errors.password?.message}
+        {...form.register("password")}
+      />
+
+      <div className="flex justify-end">
+        <Link
+          href="/auth/reset-password"
+          className="text-xs font-black text-elitePurple transition hover:opacity-75"
         >
-          {isPending ? <Spinner /> : "Login"}
-        </button>
-      </form>
-    </Form>
+          Forgot password?
+        </Link>
+      </div>
+
+      <button
+        type="submit"
+        disabled={isPending}
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-elitePurple px-4 text-sm font-black text-white shadow-lg shadow-elitePurple/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {isPending ? (
+          <Spinner />
+        ) : (
+          <>
+            Continue to Elite
+            <ArrowRight size={17} />
+          </>
+        )}
+      </button>
+    </form>
   );
 };

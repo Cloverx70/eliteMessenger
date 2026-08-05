@@ -1,11 +1,35 @@
+import type { Metadata } from "next";
+
+import AuthShell from "../../_components/AuthShell";
 import { ResetPasswordForm } from "./_components/ResetPasswordForm";
 
-export default function VerifyRequestResetPasswordPage() {
+export const metadata: Metadata = {
+  title: "Create New Password",
+  description:
+    "Create a new secure password for your Elite Messenger account.",
+};
+
+type PageProps = {
+  params: Promise<{
+    token: string;
+  }>;
+};
+
+export default async function VerifyResetPasswordPage({
+  params,
+}: PageProps) {
+  const { token } = await params;
+
   return (
-    <section className=" w-full h-screen bg-gray-100 flex items-center justify-center">
-      <div className=" w-full h-[40%] 2xl:w-[45%] xl:w-[45%] lg:w-[55%] md:w-[65%] sm:w-full sm:rounded-none bg-white rounded-lg shadow-lg p-6 ">
-        <ResetPasswordForm />
-      </div>
-    </section>
+    <AuthShell
+      badge="Create a new password"
+      title="Secure your account."
+      description="Choose a strong password you have not used before. You’ll return to login after the reset succeeds."
+      footerText="Password already updated?"
+      footerLinkLabel="Return to login"
+      footerLinkHref="/auth/login"
+    >
+      <ResetPasswordForm token={token} />
+    </AuthShell>
   );
 }

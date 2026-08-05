@@ -13,7 +13,19 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 
+interface UploadedProfilePicture {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+}
+
+export interface SignedFileUrls {
+  url: string;
+  blurUrl?: string;
+}
 @Injectable()
 export class S3Service {
   private readonly s3: S3Client;
@@ -32,9 +44,6 @@ export class S3Service {
     });
   }
 
-  /**
-   * Upload File
-   */
   async uploadFile(file: Express.Multer.File, folder: string): Promise<string> {
     try {
       const extension = file.originalname.split('.').pop();
@@ -58,9 +67,6 @@ export class S3Service {
     }
   }
 
-  /**
-   * Delete File
-   */
   async deleteFile(key: string): Promise<void> {
     try {
       await this.s3.send(
@@ -76,23 +82,66 @@ export class S3Service {
     }
   }
 
-  /**
-   * Get Signed URL
-   */
-  async getFileUrl(key: string, expiresIn = 3600): Promise<string> {
+  async getFileUrl(
+    key: string,
+    expiresIn = 3600,
+    blurKey?: string | null,
+  ): Promise<SignedFileUrls> {
     try {
-      const command = new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-      });
+      const createSignedUrl = async (objectKey: string): Promise<string> => {
+        const command = new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: objectKey,
+        });
 
-      return await getSignedUrl(this.s3, command, {
-        expiresIn,
-      });
-    } catch (err) {
-      console.error(err);
+        return getSignedUrl(this.s3, command, {
+          expiresIn,
+        });
+      };
+
+      const [url, blurUrl] = await Promise.all([
+        createSignedUrl(key),
+        blurKey ? createSignedUrl(blurKey) : Promise.resolve(undefined),
+      ]);
+
+      return {
+        url,
+        ...(blurUrl ? { blurUrl } : {}),
+      };
+    } catch (error) {
+      console.error('Failed to generate signed file URL:', error);
 
       throw new NotFoundException('Could not generate file URL.');
     }
+  }
+
+  async uploadProfilePicture(userId: string, file: UploadedProfilePicture) {
+    const buffer = await sharp(file.buffer)
+      .rotate()
+      .resize(512, 512, {
+        fit: 'cover',
+        position: 'centre',
+      })
+      .webp({
+        quality: 85,
+      })
+      .toBuffer();
+
+    const key = `profile-pictures/${userId}/` + `${randomUUID()}.webp`;
+
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: 'image/webp',
+        CacheControl: 'public, max-age=31536000, immutable',
+      }),
+    );
+
+    return {
+      key,
+      url: await this.getFileUrl(key, 10000),
+    };
   }
 }

@@ -3,6 +3,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
+import { S3Service } from '../../../utils/s3/s3.service';
 import { Strategy } from 'passport-jwt';
 import { UserService } from '../../user/user.service';
 
@@ -11,6 +12,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     private readonly userService: UserService,
     private readonly configService: ConfigService,
+    private readonly s3Service: S3Service,
   ) {
     super({
       jwtFromRequest: (req: Request) => {
@@ -33,7 +35,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const { id } = payload;
 
     const user = await this.userService.getUserById(id);
+
     if (!user) throw new UnauthorizedException('invalid email or password');
+
+    if (user.userPfpUrl) {
+      const UserPFPURL = await this.s3Service.getFileUrl(user.userPfpUrl);
+      user.userPfpUrl = UserPFPURL.url;
+    }
     return user;
   }
 }

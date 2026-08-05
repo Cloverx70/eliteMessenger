@@ -15,9 +15,7 @@ export default function FriendsPage() {
   return (
     <section className="h-screen min-h-0 w-full overflow-hidden bg-[#FBFCFF] dark:bg-customBlack">
       <div className="grid h-full min-h-0 w-full grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden xl:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
-        {/* Main friends content */}
         <main className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-slate-200 dark:border-slate-800">
-          {/* Fixed search and tabs */}
           <header className="z-10 flex shrink-0 flex-col gap-4 border-b border-slate-100 bg-white/95 px-6 py-5 backdrop-blur-md dark:border-slate-800 dark:bg-customBlack/95">
             <SearchInput value={query} onChange={setQuery} />
 
@@ -27,7 +25,6 @@ export default function FriendsPage() {
             />
           </header>
 
-          {/* Independently scrollable main content */}
           <div className="min-h-0 flex-[7] overflow-y-auto px-6 py-6">
             {selectedTab === "people" ? (
               <section className="flex min-h-0 flex-col gap-5">
@@ -58,7 +55,6 @@ export default function FriendsPage() {
           </div>
         </main>
 
-        {/* Independently scrollable suggested users */}
         <aside className="hidden min-h-0 overflow-y-auto flex-[3] bg-white px-5 py-6 dark:bg-customBlack xl:block">
           <div className="mb-5 flex shrink-0 items-center justify-between">
             <div>

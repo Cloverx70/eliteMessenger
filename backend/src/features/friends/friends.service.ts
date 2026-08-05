@@ -11,6 +11,12 @@ import { ChatService } from '../chat/chat.service';
 import { Friends, FriendStatus } from '../../database/entities/friends.entity';
 import { User } from '../../database/entities/user.entity';
 import { handleError } from '../../utils/handleError.util';
+import {
+  CreateNotificationCauseInput,
+  NotificationCause,
+  NotificationsService,
+} from '../notifications/notifications.service';
+import { S3Service } from '../../utils/s3/s3.service';
 
 @Injectable()
 export class FriendsService {
@@ -20,6 +26,8 @@ export class FriendsService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly chatService: ChatService,
+    private readonly notificationService: NotificationsService,
+    private readonly s3Service: S3Service,
   ) {}
 
   usersSelect = [
@@ -59,36 +67,102 @@ export class FriendsService {
     }
   }
   async sendFriendRequest(sid: string, rid: string) {
-    // Worst Case O(Log N) && Best Case O(1)
     try {
-      if (sid === rid) throw new BadRequestException('cannot friend yourself');
+      if (sid === rid) {
+        throw new BadRequestException(
+          'Cannot send a friend request to yourself',
+        );
+      }
 
-      const RequestExists = await this.friendsRepo
+      const requestExists = await this.friendsRepo
         .createQueryBuilder('f')
         .where(
-          '(f.user1Id = :sid AND f.user2Id =  :rid) OR (f.user1Id = :rid AND f.user2Id =  :sid)',
-          { sid, rid },
+          `(
+          f.user1Id = :sid
+          AND f.user2Id = :rid
+        ) OR (
+          f.user1Id = :rid
+          AND f.user2Id = :sid
+        )`,
+          {
+            sid,
+            rid,
+          },
         )
         .getOne();
 
-      if (RequestExists) {
-        if (RequestExists.status === FriendStatus.ONGOING)
-          throw new BadRequestException('Request already sent..');
+      if (requestExists) {
+        if (requestExists.status === FriendStatus.ONGOING) {
+          throw new BadRequestException('Request already sent');
+        }
 
-        if (RequestExists.status === FriendStatus.ACCEPTED)
-          throw new BadRequestException('Users already friends..');
+        if (requestExists.status === FriendStatus.ACCEPTED) {
+          throw new BadRequestException('Users are already friends');
+        }
       }
 
-      await this.friendsRepo
-        .createQueryBuilder()
-        .insert()
-        .into(Friends)
-        .values({
+      const newRequest = await this.friendsRepo.save(
+        this.friendsRepo.create({
           user1Id: sid,
           user2Id: rid,
           status: FriendStatus.ONGOING,
+        }),
+      );
+
+      const acceptedFriendships = await this.friendsRepo
+        .createQueryBuilder('friend')
+        .where('friend.status = :acceptedStatus', {
+          acceptedStatus: FriendStatus.ACCEPTED,
         })
-        .execute();
+        .andWhere(
+          `(
+          friend.user1Id IN (:...userIds)
+          OR friend.user2Id IN (:...userIds)
+        )`,
+          {
+            userIds: [sid, rid],
+          },
+        )
+        .getMany();
+
+      const senderFriendIds = new Set<string>();
+      const receiverFriendIds = new Set<string>();
+
+      for (const friendship of acceptedFriendships) {
+        if (friendship.user1Id === sid) {
+          senderFriendIds.add(friendship.user2Id);
+        } else if (friendship.user2Id === sid) {
+          senderFriendIds.add(friendship.user1Id);
+        }
+
+        if (friendship.user1Id === rid) {
+          receiverFriendIds.add(friendship.user2Id);
+        } else if (friendship.user2Id === rid) {
+          receiverFriendIds.add(friendship.user1Id);
+        }
+      }
+
+      senderFriendIds.delete(sid);
+      senderFriendIds.delete(rid);
+
+      receiverFriendIds.delete(sid);
+      receiverFriendIds.delete(rid);
+
+      const mutualFriendCount = [...senderFriendIds].filter((friendId) =>
+        receiverFriendIds.has(friendId),
+      ).length;
+
+      const friendRequestReceivedNotification: CreateNotificationCauseInput = {
+        cause: NotificationCause.FRIEND_REQUEST_RECEIVED,
+        actorId: sid,
+        recipientId: rid,
+        friendRequestId: newRequest.id,
+        mutualFriendCount,
+      };
+
+      await this.notificationService.createFromCause(
+        friendRequestReceivedNotification,
+      );
 
       return {
         message: 'Friend request sent successfully',
@@ -127,10 +201,22 @@ export class FriendsService {
         request.acceptedDate = new Date();
         await this.friendsRepo.save(request);
 
+        const friendRequestAcceptedNotification: CreateNotificationCauseInput =
+          {
+            cause: NotificationCause.FRIEND_REQUEST_ACCEPTED,
+            actorId: request.user2Id,
+            recipientId: uid,
+            friendRequestId: request.id,
+          };
+
+        await this.notificationService.createFromCause(
+          friendRequestAcceptedNotification,
+        );
+
         await this.chatService.CreateChatRoom({
           uid1: request.user1Id,
           uid2: request.user2Id,
-        }); // on accepting a friend request automatically create a chatroom between them.
+        });
       } else {
         await this.friendsRepo.remove(request);
       }
@@ -228,7 +314,9 @@ export class FriendsService {
       const search = searchQuery?.trim().toLowerCase();
 
       const applySearch = <T>(queryBuilder: SelectQueryBuilder<T>) => {
-        if (!search) return queryBuilder;
+        if (!search) {
+          return queryBuilder;
+        }
 
         return queryBuilder.andWhere(
           new Brackets((qb) => {
@@ -236,7 +324,15 @@ export class FriendsService {
               .orWhere('LOWER(u.firstname) LIKE :search')
               .orWhere('LOWER(u.lastname) LIKE :search')
               .orWhere(
-                `LOWER(CONCAT_WS(' ', u.firstname, u.lastname)) LIKE :search`,
+                `
+                LOWER(
+                  CONCAT_WS(
+                    ' ',
+                    u.firstname,
+                    u.lastname
+                  )
+                ) LIKE :search
+              `,
               );
           }),
           {
@@ -249,34 +345,33 @@ export class FriendsService {
         .createQueryBuilder('f')
         .select(
           `
-        CASE
-          WHEN f.user1Id = :uid
-          THEN f.user2Id
-          ELSE f.user1Id
-        END
-        `,
+            CASE
+              WHEN f.user1Id = :uid
+              THEN f.user2Id
+              ELSE f.user1Id
+            END
+          `,
           'id',
         )
         .where(
           `
-        (
-          f.user1Id = :uid
-          OR f.user2Id = :uid
-        )
-        AND f.status != :status
-        `,
+            (
+              f.user1Id = :uid
+              OR f.user2Id = :uid
+            )
+            AND f.status != :status
+          `,
           {
             uid,
             status: FriendStatus.DECLINED,
           },
         )
-        .getRawMany<{ id: string }>();
+        .getRawMany<{
+          id: string;
+        }>();
 
       const friendIds = [...new Set(friendRows.map((friend) => friend.id))];
 
-      /*
-       * No direct friends/relationships fallback.
-       */
       if (friendIds.length === 0) {
         const excludedIdsRaw = `
         SELECT fr.user1Id AS id
@@ -294,13 +389,19 @@ export class FriendsService {
           .createQueryBuilder('u')
           .select(this.usersSelect)
           .where(`u.id NOT IN (${excludedIdsRaw})`)
-          .andWhere('u.id != :uid', { uid })
-          .setParameters({ uid })
+          .andWhere('u.id != :uid', {
+            uid,
+          })
+          .setParameters({
+            uid,
+          })
           .limit(30);
 
         applySearch(queryBuilder);
 
         const fallbackUsers = await queryBuilder.getMany();
+
+        await this.hydrateUserProfilePictures(fallbackUsers);
 
         return {
           message: 'People you may know (no friends fallback)',
@@ -309,35 +410,34 @@ export class FriendsService {
         };
       }
 
-      /*
-       * Find accepted friends of the current user's friends.
-       */
       const mutualRows = await this.friendsRepo
         .createQueryBuilder('f')
         .select(
           `
-        CASE
-          WHEN f.user1Id IN (:...friendIds)
-          THEN f.user2Id
-          ELSE f.user1Id
-        END
-        `,
+            CASE
+              WHEN f.user1Id IN (:...friendIds)
+              THEN f.user2Id
+              ELSE f.user1Id
+            END
+          `,
           'id',
         )
         .where(
           `
-        (
-          f.user1Id IN (:...friendIds)
-          OR f.user2Id IN (:...friendIds)
-        )
-        AND f.status = :status
-        `,
+            (
+              f.user1Id IN (:...friendIds)
+              OR f.user2Id IN (:...friendIds)
+            )
+            AND f.status = :status
+          `,
           {
             friendIds,
             status: FriendStatus.ACCEPTED,
           },
         )
-        .getRawMany<{ id: string }>();
+        .getRawMany<{
+          id: string;
+        }>();
 
       const mutualIds = [
         ...new Set(
@@ -347,14 +447,13 @@ export class FriendsService {
         ),
       ];
 
-      /*
-       * No mutual connections fallback.
-       */
       if (mutualIds.length === 0) {
         const queryBuilder = this.userRepo
           .createQueryBuilder('u')
           .select(this.usersSelect)
-          .where('u.id != :uid', { uid })
+          .where('u.id != :uid', {
+            uid,
+          })
           .andWhere('u.id NOT IN (:...friendIds)', {
             friendIds,
           })
@@ -364,6 +463,8 @@ export class FriendsService {
 
         const fallbackUsers = await queryBuilder.getMany();
 
+        await this.hydrateUserProfilePictures(fallbackUsers);
+
         return {
           message: 'People you may know (fallback)',
           code: 200,
@@ -371,9 +472,6 @@ export class FriendsService {
         };
       }
 
-      /*
-       * Return matching mutual connections.
-       */
       const queryBuilder = this.userRepo
         .createQueryBuilder('u')
         .select(this.usersSelect)
@@ -386,6 +484,8 @@ export class FriendsService {
 
       const peopleYouMayKnow = await queryBuilder.getMany();
 
+      await this.hydrateUserProfilePictures(peopleYouMayKnow);
+
       return {
         message: 'People you may know returned successfully',
         code: 200,
@@ -393,6 +493,7 @@ export class FriendsService {
       };
     } catch (error: any) {
       handleError(error);
+      throw error;
     }
   }
 
@@ -473,9 +574,17 @@ export class FriendsService {
       const relationships = await this.friendsRepo
         .createQueryBuilder('f')
         .select(['f.user1Id', 'f.user2Id'])
-        .where('(f.user1Id = :uid OR f.user2Id = :uid)', {
-          uid,
-        })
+        .where(
+          `
+            (
+              f.user1Id = :uid
+              OR f.user2Id = :uid
+            )
+          `,
+          {
+            uid,
+          },
+        )
         .getMany();
 
       const relatedUserIds = [
@@ -496,45 +605,75 @@ export class FriendsService {
         });
 
       if (relatedUserIds.length > 0) {
-        queryBuilder.andWhere('u.id NOT IN (:...relatedUserIds)', {
-          relatedUserIds,
-        });
+        queryBuilder.andWhere(
+          `
+          u.id NOT IN (
+            :...relatedUserIds
+          )
+        `,
+          {
+            relatedUserIds,
+          },
+        );
       }
 
+      /*
+       * Suggestion score:
+       *
+       * Online user       +15
+       * Has profile image  +4
+       * Created <= 7 days  +8
+       * Created <= 30 days +4
+       * Random variation   +0 to +5
+       */
       queryBuilder
         .addSelect(
           `
-        (
-          CASE
-            WHEN u.isActive = true THEN 15
-            ELSE 0
-          END
+          (
+            CASE
+              WHEN u.isActive = true
+              THEN 15
+              ELSE 0
+            END
 
-          +
+            +
 
-          CASE
-            WHEN u.userPfpUrl IS NOT NULL
-              AND u.userPfpUrl != ''
-            THEN 4
-            ELSE 0
-          END
+            CASE
+              WHEN
+                u.userPfpUrl IS NOT NULL
+                AND u.userPfpUrl != ''
+              THEN 4
+              ELSE 0
+            END
 
-          +
+            +
 
-          CASE
-            WHEN u.createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-            THEN 8
+            CASE
+              WHEN
+                u.createdAt >=
+                DATE_SUB(
+                  NOW(),
+                  INTERVAL 7 DAY
+                )
+              THEN 8
 
-            WHEN u.createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            THEN 4
+              WHEN
+                u.createdAt >=
+                DATE_SUB(
+                  NOW(),
+                  INTERVAL 30 DAY
+                )
+              THEN 4
 
-            ELSE 0
-          END
+              ELSE 0
+            END
 
-          +
+            +
 
-          (RAND() * 5)
-        )
+            (
+              RAND() * 5
+            )
+          )
         `,
           'suggestionScore',
         )
@@ -543,6 +682,8 @@ export class FriendsService {
 
       const suggestedUsers = await queryBuilder.getMany();
 
+      await this.hydrateUserProfilePictures(suggestedUsers);
+
       return {
         message: 'Suggested users returned successfully',
         code: 200,
@@ -550,6 +691,37 @@ export class FriendsService {
       };
     } catch (error: any) {
       handleError(error);
+      throw error;
     }
+  }
+
+  private async resolveProfilePictureUrl(
+    value?: string | null,
+  ): Promise<string | null> {
+    if (!value) {
+      return null;
+    }
+
+    if (/^https?:\/\//i.test(value)) {
+      return value;
+    }
+
+    const { url } = await this.s3Service.getFileUrl(value);
+
+    return url;
+  }
+
+  private async hydrateUserProfilePictures<
+    T extends {
+      userPfpUrl?: string | null;
+    },
+  >(users: T[]): Promise<T[]> {
+    await Promise.all(
+      users.map(async (user) => {
+        user.userPfpUrl = await this.resolveProfilePictureUrl(user.userPfpUrl);
+      }),
+    );
+
+    return users;
   }
 }

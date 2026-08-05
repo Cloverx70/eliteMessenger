@@ -1,4 +1,5 @@
 import { AxiosResponse } from "axios";
+import { DiscoverPost } from "../discover/types";
 import { IUser } from "@/app/auth/actions";
 import ServerEndpoint from "@/lib/server-endpoint";
 import { handleError } from "@/app/constants";
@@ -11,7 +12,6 @@ export interface IChatRoom {
   recLastname: string;
   recUserPfpUrl: string;
   recBio?: string;
-  recIsActive: boolean;
   messages?: IMessage[];
   createdAt: string;
   updatedAt: string;
@@ -19,6 +19,8 @@ export interface IChatRoom {
   lastMessage?: string | null;
   lastMessageDate?: Date | null;
   unreadMessages: IMessage[];
+  recIsActive: boolean;
+  recLastSeen: string | null;
   name?: string | null;
 }
 
@@ -33,6 +35,8 @@ export interface IMessage {
   deletedAt?: Date | null;
   updatedAt: Date;
   attachments?: IAttachment[];
+  sharedPostId: string | null;
+  sharedPost: DiscoverPost | null;
   status: "pending" | "sent" | "delivered" | "seen";
   tempId?: string;
 }
@@ -47,6 +51,10 @@ export interface ITempMessage {
   createdAt: Date;
   deletedAt?: Date | null;
   updatedAt: Date;
+
+  sharedPostId: string | null;
+  sharedPost: DiscoverPost | null;
+
   attachments?: IAttachment[];
   status: "pending" | "sent" | "delivered" | "seen";
   tempId?: string;

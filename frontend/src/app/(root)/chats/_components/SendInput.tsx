@@ -17,7 +17,7 @@ import EmojiPicker from "emoji-picker-react";
 import { FaPaperclip } from "react-icons/fa6";
 import { IUser } from "@/app/auth/actions";
 import { IoIosSend } from "react-icons/io";
-import { useSocket } from "@/app/hooks/useSocket";
+import { useSocketContext } from "@/app/providers/SocketProvider";
 import { v4 as uuidv4 } from "uuid";
 
 type SendInputProps = {
@@ -42,7 +42,7 @@ const SendInput = ({
   const [attachmentBarActive, setattachmentBarActive] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
 
-  const { sendMessage } = useSocket(user.id);
+  const { sendMessage } = useSocketContext();
 
   const { mutateAsync: uploadMessageAttachmentsMutationAsync } = useMutation({
     mutationFn: (data: FormData) => UploadMessageAttachments(data),
@@ -61,22 +61,24 @@ const SendInput = ({
     const newMessage: ITempMessage = {
       id: uuidv4(),
 
-      message: text,
+      message: text.trim(),
 
-      // required:x
-      chatRoom: chatroom, // will be replaced by server message
-
+      chatRoom: chatroom,
       chatroomId: crid,
-      sender: user, // you must provide this
+
+      sender: user,
       sid: user.id,
 
       createdAt: new Date(),
       updatedAt: new Date(),
-      status: "pending" as const,
+
+      status: "pending",
 
       attachments: tempAttachments,
 
-      // optional:
+      sharedPostId: null,
+      sharedPost: null,
+
       deletedAt: null,
     };
 

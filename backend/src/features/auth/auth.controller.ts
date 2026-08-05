@@ -13,15 +13,31 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
+import * as cookie from 'cookie';
+
 import { AuthService } from './auth.service';
 import { LoginUserDto } from './dtos/loginUser.dto';
-import * as cookie from 'cookie';
-import { Response, Request } from 'express';
 import { RegisterUserDto } from './dtos/registerUser.dto';
-import { GoogleGuard } from './guards/google.guard';
-import { LocalGuard } from './guards/local.guard';
-import { JwtGuard } from './guards/jwt.guard';
 import { ResetPasswordDto } from './dtos/resetPassword.dto';
+import { GoogleGuard } from './guards/google.guard';
+import { JwtGuard } from './guards/jwt.guard';
+import { LocalGuard } from './guards/local.guard';
+
+const AUTH_COOKIE_NAME = 'ELITE_ERA_AUTH_TOKEN';
+const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+
+function getAuthCookieOptions(): cookie.SerializeOptions {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  return {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
+    path: '/',
+  };
+}
 
 @Controller('auth')
 @UsePipes(
@@ -45,38 +61,36 @@ export class AuthController {
   async login(@Body() loginUserDto: LoginUserDto, @Res() res: Response) {
     const token = await this.authService.validate(loginUserDto);
 
-    const rawTokenCookie = cookie.serialize('ELITE_ERA_AUTH_TOKEN', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7,
-      path: '/',
+    if (!token) {
+      throw new UnauthorizedException('Unable to create authentication token');
+    }
+
+    res.setHeader(
+      'Set-Cookie',
+      cookie.serialize(AUTH_COOKIE_NAME, token, getAuthCookieOptions()),
+    );
+
+    return res.status(200).json({
+      message: 'logged in successfully',
     });
-
-    res.setHeader('Set-Cookie', rawTokenCookie);
-
-    return res.status(200).json({ message: 'logged in successfully' });
   }
 
   @Post('register')
-  @UsePipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    }),
-  )
   async register(
     @Body() registerUserDto: RegisterUserDto,
     @Res() res: Response,
   ) {
     const registerResponse = await this.authService.register(registerUserDto);
 
-    if (registerResponse.code !== 201)
+    if (!registerResponse || registerResponse.code !== 201) {
       throw new BadRequestException(
         'error registering user, please try again later',
       );
+    }
 
-    return res.status(201).json({ message: registerResponse.message });
+    return res.status(201).json({
+      message: registerResponse.message,
+    });
   }
 
   @Post('google-login')
@@ -87,25 +101,22 @@ export class AuthController {
   async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
     const token = req.token;
 
-    if (!token || token.length === 0)
+    if (!token) {
       throw new UnauthorizedException('error validating');
+    }
 
-    const rawTokenCookie = cookie.serialize('Token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7,
-      path: '/',
-    });
+    res.setHeader(
+      'Set-Cookie',
+      cookie.serialize(AUTH_COOKIE_NAME, token, getAuthCookieOptions()),
+    );
 
-    res.setHeader('Set-Cookie', rawTokenCookie);
+    const frontBaseUrl = process.env.FRONT_BASE_URL;
 
-    const FrontBaseURL = process.env.FRONT_BASE_URL;
+    if (!frontBaseUrl) {
+      throw new BadRequestException('FRONT_BASE_URL is not configured');
+    }
 
-    const redirectURL = `${FrontBaseURL}/`;
-
-    if (!token) throw new BadRequestException('error creating token');
-
-    return res.redirect(302, redirectURL);
+    return res.redirect(302, `${frontBaseUrl}/`);
   }
 
   @Put('req-reset-password')
@@ -115,16 +126,37 @@ export class AuthController {
   ) {
     const response = await this.authService.requestResetPassword(email);
 
-    return res.status(200).json({ message: response.message });
+    return res.status(200).json({
+      message: response?.message,
+    });
   }
 
   @Put('verify-reset-password')
-  async ResetPassword(
+  async resetPassword(
     @Res() res: Response,
     @Body() resetPasswordDto: ResetPasswordDto,
   ) {
     const response = await this.authService.resetPassword(resetPasswordDto);
 
-    return res.status(200).json({ message: response.message });
+    return res.status(200).json({
+      message: response?.message,
+    });
+  }
+
+  @Post('logout')
+  logout(@Res() res: Response) {
+    res.setHeader(
+      'Set-Cookie',
+      cookie.serialize(AUTH_COOKIE_NAME, '', {
+        ...getAuthCookieOptions(),
+        maxAge: 0,
+        expires: new Date(0),
+      }),
+    );
+
+    return res.status(200).json({
+      message: 'Logged out successfully',
+      code: 200,
+    });
   }
 }

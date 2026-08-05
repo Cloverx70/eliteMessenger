@@ -6,7 +6,7 @@ import { useChatStore } from "@/app/stores/ChatStore";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSocket } from "@/app/hooks/useSocket";
+import { useSocketContext } from "@/app/providers/SocketProvider";
 
 type GroupSocketNotificationsProps = {
   user: IUser;
@@ -19,7 +19,7 @@ const GroupSocketNotifications = ({ user }: GroupSocketNotificationsProps) => {
     (state) => state.incrementGroupUnread,
   );
 
-  const { onGroupNotification, offGroupNotification } = useSocket(user.id);
+  const { onGroupNotification, offGroupNotification } = useSocketContext();
 
   useEffect(() => {
     const handleNotification = (message: IGroupMessage) => {

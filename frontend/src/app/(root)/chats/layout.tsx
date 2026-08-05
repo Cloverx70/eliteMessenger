@@ -1,8 +1,13 @@
-import ChatroomProfile from "./_components/ChatroomProfile";
-import ChatroomsList from "./_components/ChatroomsList";
-import { QueryProvider } from "@/app/providers/query-provider";
+import ChatsResponsiveShell from "./_components/ChatsResponsiveShell";
+import { Metadata } from "next";
 import { getUserFromCookie } from "@/lib/user-auth";
 import { redirect } from "next/navigation";
+
+export const metadata: Metadata = {
+  title: "Chats",
+  description:
+    "View your private conversations, send messages, share attachments, and stay connected with friends on Elite Messenger.",
+};
 
 export default async function ChatsLayout({
   children,
@@ -10,22 +15,24 @@ export default async function ChatsLayout({
   children: React.ReactNode;
 }>) {
   const user = await getUserFromCookie();
-  if (!user) redirect("/login");
+
+  if (!user) {
+    redirect("/login");
+  }
+
   return (
-    <section className="h-screen w-full dark:bg-customBlack">
-      <QueryProvider>
-        <div className="flex h-screen w-full overflow-hidden">
-          <aside className="h-full flex-[2.5]">
-            <ChatroomsList />
-          </aside>
-
-          <main className="h-full flex-[5.5]">{children}</main>
-
-          <aside className="h-full flex-[2]">
-            <ChatroomProfile />
-          </aside>
-        </div>
-      </QueryProvider>
+    <section
+      className="
+        h-full
+        min-h-0
+        w-full
+        min-w-0
+        overflow-hidden
+        bg-white
+        dark:bg-customBlack
+      "
+    >
+      <ChatsResponsiveShell>{children}</ChatsResponsiveShell>
     </section>
   );
 }

@@ -17,6 +17,5 @@ export const databaseOptions: DataSourceOptions = {
 
   migrationsTableName: 'typeorm_migrations',
 
-  synchronize: false,
   migrationsRun: false,
 };

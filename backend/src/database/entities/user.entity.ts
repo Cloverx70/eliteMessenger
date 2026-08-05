@@ -12,7 +12,14 @@ import { GroupChat } from './groupChat.entity';
 import { GroupMember } from './groupMember.entity';
 import { GroupMessage } from './groupMessage.entity';
 import { GroupMessageReceipt } from './groupMessageReceipt.entity';
+import { HiddenPost } from './hiddenPosts.entity';
 import { Message } from './message.entity';
+import { Post } from './post.entity';
+import { PostComment } from './postComment.entity';
+import { PostLike } from './postLike.entity';
+import { PostReport } from './postReport.entity';
+import { PostShare } from './postShare.entity';
+import { SavedPost } from './postSave.entity';
 
 @Entity('user')
 export class User {
@@ -52,11 +59,11 @@ export class User {
   @Column({ type: 'enum', enum: ['google', 'local'] })
   accountRegisterType: 'google' | 'local';
 
-  @Column({ type: 'boolean', default: true })
-  isActive: boolean = true;
+  @Column({ type: 'boolean', default: false })
+  isActive: boolean = false;
 
-  @Column({ nullable: true })
-  lastSeen: Date;
+  @Column({ type: 'datetime', nullable: true })
+  lastSeen: Date | null;
 
   @Column({ type: 'boolean', default: false })
   isAccountLocked: boolean = false;
@@ -72,6 +79,27 @@ export class User {
 
   @Column({ type: 'boolean', default: false })
   isAdmin: boolean = false;
+
+  @OneToMany(() => Post, (post) => post.author)
+  posts: Post[];
+
+  @OneToMany(() => PostLike, (postLike) => postLike.user)
+  postLikes: PostLike[];
+
+  @OneToMany(() => PostComment, (comment) => comment.author)
+  postComments: PostComment[];
+
+  @OneToMany(() => SavedPost, (savedPost) => savedPost.user)
+  savedPosts: SavedPost[];
+
+  @OneToMany(() => PostShare, (postShare) => postShare.sender)
+  postShares: PostShare[];
+
+  @OneToMany(() => PostReport, (report) => report.reporter)
+  postReports: PostReport[];
+
+  @OneToMany(() => HiddenPost, (hiddenPost) => hiddenPost.user)
+  hiddenPosts: HiddenPost[];
 
   @OneToMany(() => Friends, (friend) => friend.user1, { onDelete: 'CASCADE' })
   sentRequests: Friends[];

@@ -16,7 +16,7 @@ import EmojiPicker from "emoji-picker-react";
 import { FaPaperclip } from "react-icons/fa6";
 import { IUser } from "@/app/auth/actions";
 import { IoIosSend } from "react-icons/io";
-import { useSocket } from "@/app/hooks/useSocket";
+import { useSocketContext } from "@/app/providers/SocketProvider";
 import { v4 as uuidv4 } from "uuid";
 
 type GroupSendInputProps = {
@@ -27,7 +27,7 @@ type GroupSendInputProps = {
 
 const GroupSendInput = ({ user, group, setMessages }: GroupSendInputProps) => {
   const queryClient = useQueryClient();
-  const { sendGroupMessage } = useSocket(user.id);
+  const { sendGroupMessage } = useSocketContext();
 
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);

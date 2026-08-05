@@ -14,6 +14,7 @@ import {
 import { GroupChat } from './groupChat.entity';
 import { GroupMessageAttachment } from './groupMessageAttachment.entity';
 import { GroupMessageReceipt } from './groupMessageReceipt.entity';
+import { Post } from './post.entity';
 import { User } from './user.entity';
 
 @Entity('group_message')
@@ -53,6 +54,16 @@ export class GroupMessage {
 
   @OneToMany(() => GroupMessageReceipt, (receipt) => receipt.message)
   receipts: GroupMessageReceipt[];
+
+  @Column('uuid', { nullable: true })
+  sharedPostId: string | null;
+
+  @ManyToOne(() => Post, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'sharedPostId' })
+  sharedPost: Post | null;
 
   @CreateDateColumn()
   createdAt: Date;

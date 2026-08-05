@@ -1,5 +1,3 @@
-///////////
-
 "use client";
 
 import { GetGroupAndMessages, IGroupMessage } from "../../groups/group-action";
@@ -17,7 +15,7 @@ import Spinner from "@/app/components/spinner";
 import { UsersRound } from "lucide-react";
 import { useChatStore } from "@/app/stores/ChatStore";
 import { useParams } from "next/navigation";
-import { useSocket } from "@/app/hooks/useSocket";
+import { useSocketContext } from "@/app/providers/SocketProvider";
 
 type GroupRoomChatProps = {
   user: IUser;
@@ -46,7 +44,7 @@ const GroupRoomChat = ({ user }: GroupRoomChatProps) => {
     offGroupDeliveredACK,
     onGroupSeenACK,
     offGroupSeenACK,
-  } = useSocket(user.id);
+  } = useSocketContext();
 
   const {
     data: groupAndMessages,
@@ -79,7 +77,7 @@ const GroupRoomChat = ({ user }: GroupRoomChatProps) => {
     return () => {
       leaveGroupRoom(groupId, user.id);
     };
-    // Socket helpers use the singleton socket and are intentionally scoped by ID.
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, user.id]);
 

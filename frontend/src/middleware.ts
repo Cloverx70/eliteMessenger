@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sealData, unsealData } from "iron-session";
-import { sessionOptions } from "./lib/session-options";
+
 import ServerEndpoint from "./lib/server-endpoint";
+import { sessionOptions } from "./lib/session-options";
 
 const AUTH_TOKEN_COOKIE = "ELITE_ERA_AUTH_TOKEN";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/auth/login" || pathname === "/auth/register") {
+  if (
+    pathname === "/auth/login" ||
+    pathname === "/auth/register" ||
+    pathname === "/auth/reset-password"
+  ) {
     return NextResponse.next();
   }
 
@@ -58,7 +63,7 @@ export async function middleware(request: NextRequest) {
     console.error(err);
 
     const redirectResponse = NextResponse.redirect(
-      new URL("/auth/login", request.url)
+      new URL("/auth/login", request.url),
     );
 
     response.cookies.delete(sessionOptions.cookieName);
